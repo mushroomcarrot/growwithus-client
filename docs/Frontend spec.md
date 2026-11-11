@@ -122,6 +122,7 @@ VITE_POLLING_INTERVAL=4000
 | /demo | DemoPage | DT_DEMO | 주인·관리사 iframe 2개 + DemoPanel | GET /demo/state, PUT /demo/weather, POST /demo/fast-forward, POST /demo/reset |
 
 - iframe 주소: `/owner?demo=owner`, `/caretaker?demo=caretaker` (6절 토큰 처리 참고)
+- DemoPanel은 `/demo` 페이지 자체에서 **시연용 ADMIN 계정**으로 로그인해 호출함. `/demo/*`는 ADMIN 토큰 + `X-Demo-Mode: true`가 모두 있어야 동작함
 - 비 오는 날 홈은 별도 페이지가 아니라 OwnerHomePage의 날씨 상태로 처리함
 - 열매 진화 연출은 OwnerHomePage 위에 띄우는 오버레이임
 
@@ -205,9 +206,11 @@ VITE_POLLING_INTERVAL=4000
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-// 데모 페이지 iframe(?demo=owner / ?demo=caretaker)은 같은 브라우저에서 두 계정을 동시에 쓰므로
+// 데모 페이지(/demo, ADMIN)와 iframe(?demo=owner / ?demo=caretaker)은 같은 브라우저에서 세 계정을 동시에 쓰므로
 // localStorage를 공유하면 계정이 섞임 → 데모 모드에서는 메모리에만 보관함
-const isDemo = new URLSearchParams(window.location.search).has('demo');
+const isDemo =
+  window.location.pathname.startsWith('/demo') ||
+  new URLSearchParams(window.location.search).has('demo');
 
 const memoryStorage = (() => {
   let store = {};
@@ -226,7 +229,7 @@ export const useAuthStore = create(
   persist(
     (set) => ({
       userId: null,
-      role: null, // 'USER' | 'OWNER' | 'CARETAKER'
+      role: null, // 'USER' | 'OWNER' | 'CARETAKER' | 'ADMIN'(시연용)
       nextStep: null,
       accessToken: null,
       refreshToken: null,
@@ -250,7 +253,7 @@ export const useAuthStore = create(
 ```
 
 > 일반 사용자는 `persist`로 토큰을 localStorage에 저장함. 선택 근거와 XSS 위험은 9절에 기재함.
-> 데모 iframe은 진입 시 `?demo=` 값에 맞는 시연 계정으로 자동 로그인함 (시연 계정 정보는 백엔드와 협의).
+> 데모 iframe은 진입 시 `?demo=` 값에 맞는 시연 계정(주인·관리사)으로, `/demo` 페이지는 시연용 ADMIN 계정으로 자동 로그인함 (계정 정보는 백엔드에서 받음).
 
 ## 7. API 연동
 
@@ -266,7 +269,8 @@ export const useAuthStore = create(
 | 응답 | `{ "data": {...}, "error": { "code": null, "message": null } }` — `error.code`가 있으면 실패 |
 | 인증 | `Authorization: Bearer {accessToken}` (만료 3600초) |
 | 재발급 | `POST /auth/refresh` — Refresh Token도 새로 발급, 이전 토큰 무효 |
-| 시연 | `/demo/*`에 `X-Demo-Mode: true` |
+| 시연 | `/demo/*`는 시연용 ADMIN 토큰 + `X-Demo-Mode: true` 둘 다 필요 |
+| 경로 | `/api/v1` 등 접두어 없음 (`{VITE_API_URL}/auth/login`) |
 | 날짜 | 날짜 `YYYY-MM-DD`, 시각 ISO 8601 `+09:00` |
 | 목록 | 커서 방식 `cursor`, `limit`(기본 20), 응답 `nextCursor`가 `null`이면 마지막 |
 | ID | 접두어 문자열 (`usr_minji`, `gdn_b14`, `tsk_1110_b14` …) |
@@ -289,9 +293,10 @@ function toError(code) {
 }
 
 apiClient.interceptors.request.use((config) => {
-  const { accessToken, isDemo } = useAuthStore.getState();
+  const { accessToken } = useAuthStore.getState();
   if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
-  if (isDemo && config.url?.startsWith('/demo')) config.headers['X-Demo-Mode'] = 'true';
+  // 시연 API는 ADMIN 토큰과 함께 이 헤더가 필요함 (권한 확인은 서버에서)
+  if (config.url?.startsWith('/demo')) config.headers['X-Demo-Mode'] = 'true';
   return config;
 });
 
@@ -432,9 +437,8 @@ export const taskService = {
 
 ### 7.4 파일 업로드
 - 사진: `multipart/form-data` 파트 `photo`, jpg·png 10MB 이하. 촬영 이미지는 JPEG로 압축(긴 변 1600px) 후 전송
-- 음성: `multipart/form-data` 파트 `audio`, 60초 이하
-  - 명세는 m4a·wav만 허용함. 크롬(안드로이드)의 MediaRecorder는 webm만 지원하므로 **백엔드에 webm 허용 요청함** (12절)
-  - 아이폰 사파리는 mp4(m4a)로 녹음함
+- 음성: `multipart/form-data` 파트 `audio`, 60초 이하, webm·m4a·mp4·wav 허용
+  - 크롬(안드로이드)은 webm, 아이폰 사파리는 mp4로 녹음된 파일을 변환 없이 그대로 전송함
 - 업로드는 `Content-Type`을 직접 지정하지 않음 (Axios가 boundary 포함해 자동 설정)
 
 ### 7.5 관리사 작업 흐름과 API 호출 순서
@@ -510,7 +514,7 @@ export const taskService = {
 
 ### 8.9 방문 예약
 - 슬롯 선택 → `POST /visits` → 성공 시 Toast "토요일 오전 10시로 예약됐어요"
-- `headcount`는 명세상 필수 → 기본값 처리 방식 백엔드 협의 중 (12절)
+- `headcount`는 선택값이라 화면에서 입력받지 않고 보내지 않음
 
 ### 8.10 데모 페이지
 - /demo에서 주인·관리사 iframe + DemoPanel
@@ -587,7 +591,7 @@ export default defineConfig({
   - 개선안: 백엔드가 Refresh Token을 HttpOnly 쿠키로 주면 쿠키 방식으로 전환
 - **토큰 만료 처리**: 응답 인터셉터에서 `401 → POST /auth/refresh → 원래 요청 재시도`. 동시 요청은 재발급을 1회로 묶음. 재발급 실패 시 로그아웃 후 /login
 - **보호 라우트**: ProtectedRoute로 로그인·역할(OWNER/CARETAKER)을 확인함. 사용자 편의용이며 **최종 인가는 서버에서 수행함** (`C403`)
-- **시연 API**: `X-Demo-Mode` 헤더는 누구나 붙일 수 있으므로, 서버가 시연 계정 토큰일 때만 허용하도록 백엔드에 요청함 (12절)
+- **시연 API**: 서버가 시연용 ADMIN 토큰 + `X-Demo-Mode` 헤더가 모두 있을 때만 허용함. ADMIN 계정 정보는 코드·환경 변수에 넣지 않고 시연 현장에서 `/demo` 로그인 화면에 직접 입력함
 - **카메라·마이크**: HTTPS에서만 요청, 사용자가 버튼을 눌렀을 때만 권한 요청, 화면 이탈 시 트랙 정지
 - **업로드 검증**: 클라이언트에서 형식과 크기(사진 10MB, 음성 60초) 1차 확인. 최종 검증은 서버 (`C4001`)
 - **Service Worker 캐시**: 토큰이 포함된 요청과 API 응답은 캐시하지 않음. 로그아웃 후 같은 기기에서 이전 데이터가 보이지 않음
@@ -723,17 +727,18 @@ server {
 
 | 항목 | 내용 | 상태 |
 |------|------|------|
-| 음성 형식 | 크롬·안드로이드 녹음은 webm → voice-memos에 webm, mp4 허용 요청 | 요청함 |
-| 시연 API 보안 | `X-Demo-Mode` 헤더만으로는 누구나 호출 가능 → 시연 계정 토큰일 때만 허용 요청 | 요청함 |
-| CORS·HTTPS | 백엔드 HTTPS 배포, CORS에 Vercel 정식 주소 등록 | 요청함 |
-| 경로 접두어 | 명세는 접두어 없음, 현재 구현은 `/api/v1` → 최종 결정 대기 (`VITE_API_URL`로 맞춤) | 대기 |
-| 배치 대체 | 할 일 조회 시 그날 작업 없으면 즉시 생성, 프로필 등록 시 첫 작업·일기 생성 | 요청함 |
+| 음성 형식 | webm, m4a, mp4, wav 모두 허용 | 반영 완료 |
+| 시연 API 보안 | `/demo/*`는 시연용 ADMIN 토큰 + `X-Demo-Mode: true` 필요 | 반영 완료 |
+| 경로 접두어 | `/api/v1` 사용 안 함, 명세 경로 그대로 | 결정 |
+| 방문 예약 | `headcount` 선택값 | 반영 예정 |
+| 우선순위 | 알림 목록, 예약 취소는 맨 뒤로. 푸시 토큰 API는 있지만 프론트 미사용 | 결정 |
+| CORS·HTTPS | 백엔드 HTTPS 배포, CORS에 Vercel 정식 주소 등록 | 추후 작업 |
+| 배치 대체 | 할 일 조회 시 그날 작업 없으면 즉시 생성, 프로필 등록 시 첫 작업·일기 생성 | 답변 대기 |
 | district | 디자인에 처인구 선택지 있음, API는 SUJI·GIHEUNG만 | 대기 |
-| 가족 수 | 예약 인원 기본값용 `familySize` 필드 추가 요청 | 대기 |
+| 가족 수 | `familySize` 필드 추가 여부 (예약 인원이 선택값이 되어 급하지 않음) | 답변 대기 |
 | 캐릭터 이름 | 작물별 고정("토순이") → 프로필 화면 입력칸 삭제 예정 | 결정 |
 | 음성 issues 라벨 | issues 코드별 한글 문구 목록 요청 | 대기 |
 | 마이페이지 | 보낸 하트 수, 관리사 돌봄 횟수 필드 추가 요청 | 대기 |
-| 방문 예약 | `headcount` 선택값 처리 또는 기본값 | 대기 |
 | 성장 일기 원문 | CARE_LOG에 음성 원문 필드 (선택) | 대기 |
 | 기본 캐릭터 | 관리사 프로필에 캐릭터 선택값 저장 필드 | 협의 필요 |
-| 시연 계정 | 주인·관리사 아이디/비밀번호 | 대기 |
+| 시연 계정 | 주인·관리사·ADMIN 아이디/비밀번호 | 대기 |
