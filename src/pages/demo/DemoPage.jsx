@@ -94,7 +94,7 @@ export default function DemoPage() {
   const scale = usePhoneScale();
   const ownerRef = useRef(null);
   const careRef = useRef(null);
-  const { accessToken, role, login } = useAuthStore();
+  const { accessToken, role, login, logout } = useAuthStore();
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
@@ -104,6 +104,22 @@ export default function DemoPage() {
   useEffect(() => {
     if (USE_MOCK && !isAdmin) authService.login({ username: 'admin', password: 'mock' }).then(login);
   }, [isAdmin, login]);
+
+  // 로그인 화면으로 나가기: 기기에 저장된 로그인까지 지우고 새로 불러옴
+  const exitDemo = async () => {
+    try {
+      await authService.logout();
+    } catch {
+      // 서버 로그아웃이 실패해도 나감
+    }
+    logout();
+    try {
+      localStorage.removeItem('daesin-auth');
+    } catch {
+      // 저장소를 못 쓰는 환경
+    }
+    window.location.assign('/login');
+  };
 
   const notify = (type) => {
     [ownerRef, careRef].forEach((ref) => ref.current?.contentWindow?.postMessage({ type }, window.location.origin));
@@ -142,7 +158,12 @@ export default function DemoPage() {
 
       <aside className="flex w-[340px] shrink-0 flex-col gap-6 self-stretch rounded-[20px] border border-line bg-white p-6">
         <div className="flex flex-col gap-1">
-          <span className="self-start rounded-md bg-ink px-2 py-0.5 text-[11px] font-extrabold tracking-wide text-white">DEMO</span>
+          <div className="flex items-center justify-between">
+            <span className="rounded-md bg-ink px-2 py-0.5 text-[11px] font-extrabold tracking-wide text-white">DEMO</span>
+            <button type="button" onClick={exitDemo} className="text-[13px] font-bold text-sub underline">
+              로그인 화면으로
+            </button>
+          </div>
           <h1 className="mt-1 text-[22px] font-extrabold">데모 컨트롤</h1>
           <p className="text-[13px] text-sub">누르면 주인·관리사 화면에 바로 반영돼요</p>
         </div>
