@@ -31,7 +31,7 @@ function currentUsername() {
 }
 
 function computeNextStep(user) {
-  if (user.role === 'ADMIN') return 'OWNER_HOME';
+  if (user.role === 'ADMIN') return null;
   if (user.role === 'OWNER') return user.owner ? 'OWNER_HOME' : 'PROFILE_OWNER';
   if (user.role === 'CARETAKER') return user.caretaker ? 'CARE_TODAY' : 'PROFILE_CARE';
   return 'ROLE_SELECT';
