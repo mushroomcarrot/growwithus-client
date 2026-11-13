@@ -1,22 +1,16 @@
-// src/services/apiClient.js
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
-import { toUserMessage } from '../utils/errorMessage';
+import { toError } from './apiError';
 
 const baseURL = import.meta.env.VITE_API_URL;
 
 export const apiClient = axios.create({ baseURL, timeout: 15000 });
 
-function toError(code) {
-  const error = new Error(toUserMessage(code));
-  error.code = code ?? null;
-  return error;
-}
-
 apiClient.interceptors.request.use((config) => {
-  const { accessToken, isDemo } = useAuthStore.getState();
+  const { accessToken } = useAuthStore.getState();
   if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
-  if (isDemo && config.url?.startsWith('/demo')) config.headers['X-Demo-Mode'] = 'true';
+  // 시연 API는 ADMIN 토큰과 함께 이 헤더가 필요함 (권한 확인은 서버에서)
+  if (config.url?.startsWith('/demo')) config.headers['X-Demo-Mode'] = 'true';
   return config;
 });
 
@@ -34,7 +28,7 @@ async function refreshTokens() {
     const data = res.data?.data;
     setTokens(data.accessToken, data.refreshToken);
     return data.accessToken;
-  } catch (e) {
+  } catch {
     logout();
     throw toError('C4013');
   }
@@ -71,6 +65,7 @@ apiClient.interceptors.response.use(
       }
     }
 
+    if (!error.response) return Promise.reject(toError('NETWORK'));
     return Promise.reject(toError(error.response?.data?.error?.code));
   }
 );

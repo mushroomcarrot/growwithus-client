@@ -29,7 +29,7 @@
 
 | 구분 | 사용 |
 |------|------|
-| Framework | React 19, Vite |
+| Framework | React 19.3, Vite 8 |
 | 언어 | JavaScript |
 | 라우팅 | React Router |
 | 상태 관리 | Zustand |
@@ -67,7 +67,18 @@ npm run dev
 - 값을 바꾸면 개발 서버를 다시 켜야 반영됨
 
 ### 목업 모드
-백엔드 없이 화면을 개발할 때는 `VITE_USE_MOCK=true`로 둠. `src/services/*`가 `src/mocks/*`의 데이터를 반환하며, 목업은 API 응답의 `data` 형태를 그대로 따름.
+백엔드 없이 화면을 개발할 때는 `VITE_USE_MOCK=true`로 둠. `src/services/index.js`가 `src/mocks/mockApi.js`의 응답을 대신 돌려주며, 응답은 API 명세의 `data` 형태를 그대로 따름.
+
+- 목업 데이터는 브라우저 localStorage(`daesin-mock-db-v1`)에 저장되어, 같은 브라우저의 주인·관리사 화면이 같은 데이터를 봄
+- 시연 계정 (비밀번호는 아무거나): 주인 `minji`, 관리사 `soonja`, 데모 `admin`
+- 새로 가입하면 빈 칸 번호(예: 농촌테마파크 `B-17`)로 텃밭을 연결할 수 있음
+- 데이터를 처음 상태로 돌리려면 `/demo`의 "처음 상태로 되돌리기"를 누르거나 localStorage를 지움
+
+### 시연 페이지 (`/demo`)
+- 노트북 화면에서 `/demo`를 열면 주인(`/owner?demo=owner`)과 관리사(`/caretaker?demo=caretaker`) 화면이 나란히 뜸
+- 오른쪽 패널에서 날씨(맑음·비·더움), 18일 빨리 감기, 초기화를 누르면 두 화면이 바로 갱신됨
+- 목업 모드는 시연 계정으로 자동 로그인됨. 실제 API 모드에서는 패널에 ADMIN 계정으로, 각 화면 안에서 시연 계정으로 로그인함
+- 세 화면의 로그인 정보는 탭 메모리에만 저장되므로 새로고침하면 다시 로그인해야 함
 
 ## 스크립트
 
@@ -84,16 +95,18 @@ npm run dev
 ```
 src/
 ├── components/
-│   ├── common/      # 레이아웃, 하단 탭, 토스트, 버튼, 보호 라우트
-│   ├── owner/       # 텃밭 주인 화면 컴포넌트
-│   ├── caretaker/   # 텃밭 관리사 화면 컴포넌트
-│   └── demo/        # 데모 컨트롤 패널
-├── pages/           # 라우트 단위 페이지
-├── services/        # apiClient + 기능별 API 호출
-├── mocks/           # 목업 데이터
-├── hooks/           # usePolling, useCamera, useRecorder, useSpeech
-├── store/           # Zustand 스토어
-└── utils/           # nextStep, 에러 문구, enum 라벨
+│   ├── common/      # 레이아웃·하단 탭, 토스트, 폼, 아이콘, 일러스트, 읽어주기, 보호 라우트
+│   └── owner/       # 작물 캐릭터, 성장 단계, 진화 연출
+├── pages/
+│   ├── auth/        # 로그인, 회원가입, 역할 선택, 프로필 설정
+│   ├── owner/       # 주인 홈, 성장 일기, 수확, 마이페이지
+│   ├── caretaker/   # 오늘 할 일, 사진, 말로 남기기, 완료
+│   └── demo/        # 시연 페이지
+├── services/        # apiClient, 서비스 모음(index.js)
+├── mocks/           # 목업 DB와 목업 API
+├── hooks/           # useAsync, usePolling, useCamera, useRecorder, useSpeech, useMe
+├── store/           # Zustand 스토어 (auth, me, caretaker, ui)
+└── utils/           # nextStep, 에러 문구, enum 라벨, 날짜, 이미지 압축
 ```
 
 ## 화면과 경로

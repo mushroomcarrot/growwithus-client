@@ -8,7 +8,7 @@
 
 ## 1. 기술 스택
 
-- **Framework**: React 19.x (설치 시점 최신 안정 버전)
+- **Framework**: React 19.3
 - **언어**: JavaScript
 - **라우팅**: React Router
 - **상태 관리**: Zustand

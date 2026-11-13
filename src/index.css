@@ -1,19 +1,36 @@
-/* src/index.css */
 @import "tailwindcss";
 
 @theme {
   --color-cream: #FBF8F1;
-  --color-leaf: #4C8C3F;
-  --color-leaf-dark: #2F6B2A;
-  --color-leaf-light: #E4F1DC;
+  --color-paper: #FFFFFF;
+  --color-sand: #F1ECDF;
+  --color-line: #E6E0D2;
   --color-ink: #1F2A1F;
   --color-sub: #5E6359;
-  --color-heart: #D9507A;
+  --color-muted: #6B6F66;
+  --color-leaf: #4C8C3F;
+  --color-leaf-dark: #2F6B2A;
+  --color-leaf-shadow: #3A6E30;
+  --color-leaf-light: #E4F1DC;
+  --color-leaf-soft: #F1F6EC;
   --color-tomato: #E5483B;
-  --font-sans: "Noto Sans KR", system-ui, sans-serif;
+  --color-heart: #D9507A;
+  --color-heart-light: #FCE4EC;
+  --color-heart-dark: #A8325A;
+  --color-sky: #E3EFFB;
+  --color-rain: #D5DFEA;
+  --color-hot: #FDE7D6;
+  --color-blue: #2B56B0;
+  --color-blue-light: #E3EBFB;
+  --color-orange: #A2480F;
+  --color-orange-light: #FDEBDC;
+  --color-sun: #FFF4CF;
+  --font-sans: "Noto Sans KR", system-ui, -apple-system, sans-serif;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
 }
 
@@ -23,4 +40,70 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #8A8E84;
+}
+
+:focus-visible {
+  outline: 3px solid #2B56B0;
+  outline-offset: 2px;
+}
+
+.pb-safe {
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+@keyframes pop-in {
+  0% { transform: scale(0.85); opacity: 0; }
+  70% { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes fall {
+  0% { transform: translateY(-20px); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translateY(40px); opacity: 0; }
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(229, 72, 59, 0.45); }
+  100% { box-shadow: 0 0 0 22px rgba(229, 72, 59, 0); }
+}
+
+.animate-pop-in { animation: pop-in 0.5s ease-out both; }
+.animate-float { animation: float 3s ease-in-out infinite; }
+.animate-fall { animation: fall 1.4s linear infinite; }
+.animate-pulse-ring { animation: pulse-ring 1.2s ease-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pop-in,
+  .animate-float,
+  .animate-fall,
+  .animate-pulse-ring {
+    animation: none;
+  }
 }
