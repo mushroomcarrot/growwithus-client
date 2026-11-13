@@ -167,7 +167,7 @@ export default function TaskDonePage() {
         <span className="text-[22px] font-extrabold">{next ? '다음 할 일 보기' : '오늘 일 끝내기'}</span>
         {next && (
           <span className="text-[15px] font-medium text-leaf-light">
-            {next.garden.plotCode} {next.garden.cropName} · {next.todo[0].title}
+            {next.garden.plotCode} {next.garden.ownerNickname} {next.garden.cropName} · {next.todo[0].title}
           </span>
         )}
       </button>

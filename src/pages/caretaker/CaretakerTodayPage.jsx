@@ -3,13 +3,15 @@ import { useAsync } from '../../hooks/useAsync';
 import { usePolling } from '../../hooks/usePolling';
 import { givenName, useMe } from '../../hooks/useMe';
 import { gardenCards } from '../../hooks/useTodayTask';
-import { taskService } from '../../services';
+import { authService, taskService } from '../../services';
+import { demoAs, useAuthStore } from '../../store/authStore';
 import { useCaretakerStore } from '../../store/caretakerStore';
+import { useMeStore } from '../../store/ownerStore';
 import { formatMonthDayWeekday } from '../../utils/format';
 import { EmptyState, ErrorBox, LoadingSpinner } from '../../components/common/Feedback';
 import ReadAloudButton from '../../components/common/ReadAloudButton';
 import { FlowerBurst } from '../../components/common/Characters';
-import { IconCloudRain, IconMic, IconSun, IconThermo } from '../../components/common/Icons';
+import { IconCheck, IconCloudRain, IconMic, IconSun, IconThermo } from '../../components/common/Icons';
 
 function NoticeIcon({ text }) {
   if (text?.includes('비')) return <IconCloudRain />;
@@ -21,6 +23,8 @@ export default function CaretakerTodayPage() {
   const navigate = useNavigate();
   const { me } = useMe();
   const startTask = useCaretakerStore((s) => s.startTask);
+  const logout = useAuthStore((s) => s.logout);
+  const clearMe = useMeStore((s) => s.clearMe);
   const { data: today, loading, error, reload } = useAsync(() => taskService.getToday(), []);
   usePolling(() => reload({ silent: true }));
 
@@ -31,12 +35,33 @@ export default function CaretakerTodayPage() {
   const next = cards.slice(currentIndex + 1).find((c) => !c.done);
   const doneCount = cards.filter((c) => c.done).length;
 
+  const doLogout = async () => {
+    try {
+      await authService.logout();
+    } catch {
+      // 서버 로그아웃이 실패해도 기기에서는 로그아웃함
+    }
+    logout();
+    clearMe();
+    navigate('/login', { replace: true });
+  };
+
+  // 시연 화면(iframe) 안에서는 계정이 바뀌면 안 되므로 숨김
+  const logoutButton = demoAs ? null : (
+    <button type="button" onClick={doLogout} className="h-10 shrink-0 rounded-xl px-3 text-[15px] font-bold text-sub underline">
+      로그아웃
+    </button>
+  );
+
   if (loading) return <LoadingSpinner large label="오늘 할 일을 불러오고 있어요" />;
   if (error) return <ErrorBox large message={error.message} onRetry={reload} />;
 
   const header = (
     <div className="flex flex-col gap-1">
-      <span className="text-[15px] text-[#4A5145]">{formatMonthDayWeekday(today?.date ?? new Date())}</span>
+      <div className="flex items-center justify-between">
+        <span className="text-[15px] text-[#4A5145]">{formatMonthDayWeekday(today?.date ?? new Date())}</span>
+        {logoutButton}
+      </div>
       <h1 className="text-[26px] leading-snug font-extrabold">
         {name ? `${name} 님, ` : ''}오늘은
         <br />
@@ -56,16 +81,42 @@ export default function CaretakerTodayPage() {
 
   if (!current) {
     return (
-      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-5 pt-12 pb-safe text-center">
-        <div className="animate-pop-in">
-          <FlowerBurst size={120} />
-        </div>
-        <h1 className="text-[28px] font-extrabold">오늘 {cards.length}곳 다 보셨어요!</h1>
-        <p className="text-lg leading-relaxed text-[#3B4A36]">
-          수고 많으셨어요.
-          <br />
-          가족들에게 소식을 모두 전했어요.
-        </p>
+      <main className="flex flex-1 flex-col gap-4 px-5 pt-12 pb-safe">
+        <div className="flex justify-end">{logoutButton}</div>
+        <section className="flex flex-col items-center gap-3 text-center">
+          <div className="animate-pop-in">
+            <FlowerBurst size={110} />
+          </div>
+          <h1 className="text-[28px] font-extrabold">오늘 {cards.length}곳 다 보셨어요!</h1>
+          <p className="text-lg leading-relaxed text-[#3B4A36]">
+            수고 많으셨어요.
+            <br />
+            가족들에게 소식을 모두 전했어요.
+          </p>
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <h2 className="text-lg font-extrabold">오늘 한 일</h2>
+          {cards.map(({ garden }) => (
+            <div
+              key={garden.gardenId}
+              className="flex items-center gap-3 rounded-[18px] bg-white px-4 py-3 shadow-[0_2px_8px_rgba(60,50,30,0.07)]"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-leaf-light text-leaf-dark">
+                <IconCheck size={20} />
+              </span>
+              <span className="flex flex-1 flex-col text-left">
+                <span className="text-[17px] font-extrabold">
+                  {garden.plotCode} {garden.ownerNickname} · {garden.cropName}
+                </span>
+                <span className="text-[15px] text-[#4A5145]">{garden.tasks.map((t) => t.title).join(', ')}</span>
+              </span>
+            </div>
+          ))}
+        </section>
+
+        <div className="flex-1" />
+        <p className="text-center text-base text-sub">내일 할 일은 아침에 다시 알려드릴게요</p>
       </main>
     );
   }
@@ -104,7 +155,7 @@ export default function CaretakerTodayPage() {
           <ReadAloudButton text={readText} />
         </div>
         <span className="text-[17px] text-[#4A5145]">
-          {garden.cropName} · {garden.ownerNickname}
+          {garden.ownerNickname} 텃밭 · {garden.cropName}
         </span>
         <h2 className="text-[32px] leading-tight font-extrabold tracking-tight">{main.title}</h2>
         <p className="text-[17px] leading-relaxed text-[#4A5145]">
@@ -143,7 +194,7 @@ export default function CaretakerTodayPage() {
       {next && (
         <div className="flex h-12 items-center justify-between rounded-[14px] bg-sand px-4 text-[15px]">
           <span>
-            <b>다음</b> {next.garden.plotCode} {next.garden.cropName} · {next.todo[0].title}
+            <b>다음</b> {next.garden.plotCode} {next.garden.ownerNickname} {next.garden.cropName} · {next.todo[0].title}
           </span>
           <span aria-hidden="true">›</span>
         </div>
