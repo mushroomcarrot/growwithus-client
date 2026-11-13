@@ -31,13 +31,13 @@ export const TASK_TYPE_LABEL = {
   CHECK: '살펴보기',
 };
 
-// 백엔드에서 최종 목록을 받으면 교체
+// 백엔드 voice-api.md의 고정 표
 export const ISSUE_LABEL = {
   LEAF_SPOT: '잎에 점이 있어요',
-  PEST: '벌레가 보여요',
-  WILT: '잎이 시들었어요',
-  DRY_SOIL: '흙이 말랐어요',
-  BROKEN_STEM: '줄기가 꺾였어요',
+  YELLOW_LEAF: '잎이 노랗게 보여요',
+  WILTING: '작물이 시들어 보여요',
+  PEST_SUSPECTED: '벌레가 보인다는 기록이 있어요',
+  STEM_DAMAGE: '줄기가 손상된 것 같아요',
 };
 
 export const issueLabel = (code) => ISSUE_LABEL[code] ?? code;

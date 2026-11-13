@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useRecorder } from '../../hooks/useRecorder';
 import { useLiveTranscript } from '../../hooks/useLiveTranscript';
@@ -32,14 +32,80 @@ export default function TaskVoicePage() {
   const recorder = useRecorder();
   const live = useLiveTranscript(USE_MOCK);
   const setVoiceMemoId = useCaretakerStore((s) => s.setVoiceMemoId);
-  const [phase, setPhase] = useState('idle'); // idle | uploading | result
+  const [phase, setPhase] = useState('idle'); // idle | uploading | waiting | failed | result
   const [memo, setMemo] = useState(null);
   const [summary, setSummary] = useState('');
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
+  const aliveRef = useRef(true);
+
+  useEffect(
+    () => () => {
+      aliveRef.current = false;
+    },
+    []
+  );
 
   const goDone = () => navigate(`/caretaker/tasks/${taskId}/done`, { replace: true });
+
+  // 서버 처리 상태(processingStatus)에 따라 화면을 고름
+  // READY, LLM_FAILED → 결과 / PROCESSING → 기다렸다 다시 조회 / STT_FAILED, INVALID_AUDIO → 실패 안내
+  const applyMemo = async (res) => {
+    if (!aliveRef.current) return;
+    const status = res?.processingStatus ?? 'READY';
+    setMemo(res);
+    if (status === 'READY' || status === 'LLM_FAILED') {
+      setSummary(res.summary ?? res.transcript ?? '');
+      setEditing(status === 'LLM_FAILED');
+      setPhase('result');
+      return;
+    }
+    if (status === 'PROCESSING') {
+      setPhase('waiting');
+      await waitForResult(res.voiceMemoId);
+      return;
+    }
+    setPhase('failed');
+  };
+
+  // 분석 중이면 3초마다 마지막 메모를 다시 조회함 (최대 4분). 처리 시간이 지나면 재시도함.
+  const waitForResult = async (voiceMemoId) => {
+    for (let i = 0; i < 80 && aliveRef.current; i += 1) {
+      await new Promise((r) => setTimeout(r, 3000));
+      try {
+        const latest = await taskService.getLatestVoice(taskId);
+        if (latest.processingStatus !== 'PROCESSING') return applyMemo(latest);
+        if (latest.retryable) return retry(latest.voiceMemoId ?? voiceMemoId);
+      } catch {
+        // 잠깐 끊겨도 계속 기다림
+      }
+    }
+    if (aliveRef.current) {
+      setError('정리가 오래 걸리고 있어요. 다시 말해 주시거나 말 없이 완료해 주세요.');
+      setPhase('failed');
+    }
+  };
+
+  const retry = async (voiceMemoId = memo?.voiceMemoId) => {
+    setPhase('uploading');
+    setError('');
+    try {
+      await applyMemo(await taskService.retryVoice(voiceMemoId));
+    } catch (e) {
+      // 그사이 분석이 끝났으면 C4095 → 마지막 메모를 다시 조회
+      if (e.code === 'C4095') {
+        try {
+          await applyMemo(await taskService.getLatestVoice(taskId));
+          return;
+        } catch {
+          // 아래에서 안내
+        }
+      }
+      setError(e.message);
+      setPhase('failed');
+    }
+  };
 
   // 녹음이 끝나면 바로 업로드해서 AI 정리를 받음
   useEffect(() => {
@@ -53,11 +119,19 @@ export default function TaskVoicePage() {
         if (cancelled) return;
         const res = await taskService.uploadVoice(taskId, recorder.result.blob, recorder.result.fileName, spoken);
         if (cancelled) return;
-        setMemo(res);
-        setSummary(res.summary);
-        setPhase('result');
+        await applyMemo(res);
       } catch (e) {
         if (cancelled) return;
+        // 연결이 끊겨 응답을 못 받았으면 서버에 저장된 마지막 메모를 찾아봄
+        if (e.code === 'NETWORK') {
+          try {
+            const latest = await taskService.getLatestVoice(taskId);
+            if (!cancelled) await applyMemo(latest);
+            return;
+          } catch {
+            // 저장 전에 끊김 → 아래에서 다시 녹음 안내
+          }
+        }
         setError(e.message);
         setPhase('idle');
         recorder.reset();
@@ -87,6 +161,7 @@ export default function TaskVoicePage() {
   const again = () => {
     setMemo(null);
     setEditing(false);
+    setError('');
     setPhase('idle');
     recorder.reset();
   };
@@ -98,11 +173,51 @@ export default function TaskVoicePage() {
     </div>
   );
 
-  if (phase === 'uploading') {
+  if (phase === 'uploading' || phase === 'waiting') {
     return (
       <main className="flex flex-1 flex-col px-5 pt-11 pb-safe">
         {header}
-        <LoadingSpinner large label="말씀을 정리하고 있어요" />
+        <LoadingSpinner large label={phase === 'waiting' ? '조금만 더 기다려 주세요' : '말씀을 정리하고 있어요'} />
+      </main>
+    );
+  }
+
+  if (phase === 'failed') {
+    const invalid = memo?.processingStatus === 'INVALID_AUDIO';
+    const canRetry = Boolean(memo?.retryable) && !invalid;
+    return (
+      <main className="flex flex-1 flex-col gap-4 px-5 pt-11 pb-safe">
+        {header}
+        <h1 className="text-[26px] leading-snug font-extrabold">
+          {invalid ? '녹음이 잘 안 됐어요' : '말씀을 잘 못 알아들었어요'}
+        </h1>
+        <p className="text-lg leading-relaxed text-[#4A5145]">
+          {canRetry
+            ? '한 번 더 들어 볼게요. 그래도 안 되면 다시 말씀해 주세요.'
+            : '다시 말씀해 주시거나, 말 없이 완료하셔도 괜찮아요.'}
+        </p>
+        <FieldError>{error}</FieldError>
+        <div className="flex-1" />
+        {canRetry && (
+          <button
+            type="button"
+            onClick={() => retry()}
+            className="h-[68px] rounded-[20px] bg-leaf text-[22px] font-extrabold text-white shadow-[0_4px_0_#3A6E30]"
+          >
+            한 번 더 들어 보기
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={again}
+          className="flex h-[60px] items-center justify-center gap-2.5 rounded-[20px] bg-white text-[19px] font-extrabold shadow-[0_2px_10px_rgba(60,50,30,0.1)]"
+        >
+          <IconMic size={22} />
+          다시 말하기
+        </button>
+        <button type="button" onClick={goDone} className="h-12 text-[17px] font-bold text-sub underline">
+          말 없이 완료할게요
+        </button>
       </main>
     );
   }
@@ -113,6 +228,11 @@ export default function TaskVoicePage() {
       <main className="flex flex-1 flex-col gap-3.5 px-5 pt-11 pb-safe">
         {header}
         <h1 className="text-[26px] font-extrabold">잘 들었어요</h1>
+        {memo.processingStatus === 'LLM_FAILED' && (
+          <p className="rounded-xl bg-[#FFF1C2] px-3.5 py-2.5 text-base leading-normal text-[#5A4A12]">
+            문장 정리가 잘 안 돼서 하신 말씀을 그대로 담았어요. 고쳐서 보내셔도 돼요.
+          </p>
+        )}
 
         <section className="flex flex-col gap-2.5 rounded-[18px] bg-white px-4 py-3.5 shadow-[0_2px_10px_rgba(60,50,30,0.08)]">
           <div className="flex items-center gap-2.5">

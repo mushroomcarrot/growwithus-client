@@ -439,23 +439,37 @@ function remainingCount(db) {
 // 말로 남기기 정리 (STT + LLM 흉내)
 // 실제로 말한 내용(spoken)만 가지고 정리함. 알아들을 말이 없으면 작업 이름만 전함.
 const ISSUE_WORDS = [
-  [/벌레|진딧물|해충|애벌레/, 'PEST'],
-  [/점이|반점|얼룩|누렇|노랗/, 'LEAF_SPOT'],
-  [/시들|축\s?처|말라 ?죽/, 'WILT'],
-  [/흙이 ?말|바싹|건조/, 'DRY_SOIL'],
-  [/꺾|부러|넘어졌/, 'BROKEN_STEM'],
+  [/벌레|진딧물|해충|애벌레/, 'PEST_SUSPECTED'],
+  [/점이|반점|얼룩/, 'LEAF_SPOT'],
+  [/누렇|노랗/, 'YELLOW_LEAF'],
+  [/시들|축\s?처|말라 ?죽/, 'WILTING'],
+  [/꺾|부러|넘어졌/, 'STEM_DAMAGE'],
 ];
+
+// 실제 서버 응답과 같은 처리 상태 필드
+const READY = { processingStatus: 'READY', retryable: false, processingError: null };
 
 function summarizeVoice(task, spoken) {
   const text = (spoken ?? '').replace(/\s+/g, ' ').trim();
+  // 아무 소리도 못 받았으면 인식 실패로 돌려줌 (재시도하면 작업 이름만으로 정리)
+  if (!text) {
+    return {
+      transcript: null,
+      summary: null,
+      issues: [],
+      processingStatus: 'STT_FAILED',
+      retryable: true,
+      processingError: 'STT_FAILED',
+    };
+  }
   const hangul = (text.match(/[가-힣]/g) ?? []).length;
   const filler = /^[아어음으흠에네예응\s~.!?…]*$/.test(text);
   const base = `${task.title} 마쳤어요.`;
   if (hangul < 4 || filler) {
-    return { transcript: text, summary: base, issues: [] };
+    return { transcript: text, summary: base, issues: [], ...READY };
   }
   const issues = ISSUE_WORDS.filter(([re]) => re.test(text)).map(([, code]) => code);
-  return { transcript: text, summary: `${base} 관리사님 말씀: "${text}"`, issues };
+  return { transcript: text, summary: `${base} 관리사님 말씀: "${text}"`, issues, ...READY };
 }
 
 export const mockTask = {
@@ -490,11 +504,33 @@ export const mockTask = {
         }),
       1600
     ),
+  retryVoice: (voiceMemoId) =>
+    respond(
+      () =>
+        updateDb((db) => {
+          const memo = db.voiceMemos[voiceMemoId];
+          if (!memo) throw toError('C404');
+          if (memo.processingStatus === 'READY') throw toError('C4095');
+          const { task } = findTask(db, memo.taskId);
+          Object.assign(memo, { transcript: '', summary: `${task.title} 마쳤어요.`, issues: [], ...READY });
+          const { taskId: _t, ...res } = memo;
+          return res;
+        }),
+      1200
+    ),
+  getLatestVoice: (taskId) =>
+    respond(() => {
+      const memo = Object.values(readDb().voiceMemos).filter((m) => m.taskId === taskId).pop();
+      if (!memo) throw toError('C404');
+      const { taskId: _t, ...res } = memo;
+      return res;
+    }, 200),
   confirmVoice: (voiceMemoId, summary) =>
     respond(() =>
       updateDb((db) => {
         const memo = db.voiceMemos[voiceMemoId];
         if (!memo) throw toError('C404');
+        if (!memo.summary && !summary) throw toError('C002');
         if (summary) memo.summary = summary;
         memo.status = 'CONFIRMED';
         return { voiceMemoId, status: 'CONFIRMED' };

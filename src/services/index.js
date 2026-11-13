@@ -82,19 +82,27 @@ export const taskService = USE_MOCK
         form.append('photo', blob, 'photo.jpg');
         return apiClient.post(`/caretaker/tasks/${taskId}/photos`, form, { timeout: 30000 });
       },
+      // 음성 인식과 문장 정리가 오래 걸릴 수 있어 제한 시간을 넉넉히 둠 (서버 모델 호출 제한 90초)
       uploadVoice: (taskId, blob, fileName) => {
         const form = new FormData();
         form.append('audio', blob, fileName);
-        return apiClient.post(`/caretaker/tasks/${taskId}/voice-memos`, form, { timeout: 30000 });
+        return apiClient.post(`/caretaker/tasks/${taskId}/voice-memos`, form, { timeout: 120000 });
       },
+      retryVoice: (voiceMemoId) =>
+        apiClient.post(`/caretaker/voice-memos/${voiceMemoId}/retry`, null, { timeout: 120000 }),
+      getLatestVoice: (taskId) => apiClient.get(`/caretaker/tasks/${taskId}/voice-memos/latest`),
       confirmVoice: (voiceMemoId, summary) =>
         apiClient.post(`/caretaker/voice-memos/${voiceMemoId}/confirm`, summary ? { summary } : {}),
       complete: (taskId, { photoId, voiceMemoId } = {}) =>
         apiClient.post(`/caretaker/tasks/${taskId}/complete`, { photoId, voiceMemoId }),
       checkStage: (gardenId, observed, photoId) =>
         apiClient.post(`/gardens/${gardenId}/stage-checks`, { observed, photoId }),
-      // 받은 하트 수 API가 없어서 실제 모드에서는 표시하지 않음
-      getHeartsForToday: async () => null,
+      // 이번 달 활동 요약의 heartsReceivedToday (실패하면 표시하지 않음)
+      getHeartsForToday: () =>
+        apiClient
+          .get('/caretakers/me/summary')
+          .then((d) => d?.heartsReceivedToday ?? null)
+          .catch(() => null),
     };
 
 export const ttsService = {
@@ -107,7 +115,7 @@ export const ttsService = {
 export const demoService = pick(mockDemo, {
   getState: () => apiClient.get('/demo/state'),
   setWeather: (condition) => apiClient.put('/demo/weather', { condition }),
-  // 백엔드 명세에 아직 없음 → PUT /demo/stage 추가 요청 필요
+  // 씨앗부터 열매까지 단계별 시연 (시연 텃밭 B-14만 바뀜)
   setStage: (stage) => apiClient.put('/demo/stage', { stage }),
   fastForward: (days = 18) => apiClient.post('/demo/fast-forward', { days }),
   reset: () => apiClient.post('/demo/reset'),
