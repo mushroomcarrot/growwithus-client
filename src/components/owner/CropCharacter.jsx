@@ -94,14 +94,51 @@ function Sprout({ stage }) {
   );
 }
 
-export default function CropCharacter({ stage = 'FLOWER', animation = 'sunny_happy' }) {
-  if (stage === 'FRUIT') {
+// 씨앗·새싹·열매 단계에도 날씨가 보이게 캐릭터 위에 겹쳐 그림 (꽃 단계는 Tomato가 직접 그림)
+function WeatherLayer({ animation }) {
+  if (animation === 'sunny_happy') {
     return (
-      <div className="animate-float">
-        <FruitPlant size={170} />
-      </div>
+      <g>
+        <circle cx="160" cy="30" r="14" fill="#F7C548" />
+        <path d="M160 8v6M160 46v6M138 30h6M176 30h6M145 15l4 4M171 41l4 4M145 45l4-4M171 19l4-4" stroke="#F7C548" strokeWidth="3" strokeLinecap="round" />
+      </g>
     );
   }
+  if (animation === 'rain_umbrella') {
+    return (
+      <g>
+        <path d="M140 16a12 12 0 0 1 22-6 10 10 0 0 1 14 9 8 8 0 0 1-2 16h-32a10 10 0 0 1-2-19z" fill="#A9B8CA" />
+        <path d="M16 14a10 10 0 0 1 18-5 8 8 0 0 1 11 7 7 7 0 0 1-2 13H18a8 8 0 0 1-2-15z" fill="#BCC8D6" />
+        <g className="animate-fall">
+          <path d="M28 48l-3 7M44 70l-3 7M20 98l-3 7M30 128l-3 7M150 64l-3 7M166 92l-3 7M176 124l-3 7M140 112l-3 7" stroke="#8FA6C4" strokeWidth="3" strokeLinecap="round" />
+        </g>
+      </g>
+    );
+  }
+  if (animation === 'hot_sweat') {
+    return (
+      <g>
+        <circle cx="160" cy="30" r="18" fill="#F28B3C" />
+        <path d="M160 4v6M160 50v6M134 30h6M180 30h6" stroke="#F28B3C" strokeWidth="3" strokeLinecap="round" />
+        <path d="M36 88c3 5 5 7 5 10a5 5 0 0 1-10 0c0-3 2-5 5-10z" fill="#7FC4F0" />
+      </g>
+    );
+  }
+  return null;
+}
+
+function WithWeather({ animation, children }) {
+  return (
+    <div className="relative flex h-[190px] w-[190px] items-center justify-center">
+      {children}
+      <svg width="190" height="190" viewBox="0 0 190 190" className="pointer-events-none absolute inset-0" aria-hidden="true">
+        <WeatherLayer animation={animation} />
+      </svg>
+    </div>
+  );
+}
+
+export default function CropCharacter({ stage = 'FLOWER', animation = 'sunny_happy' }) {
   if (stage === 'FLOWER') {
     return (
       <div className="animate-float">
@@ -110,9 +147,9 @@ export default function CropCharacter({ stage = 'FLOWER', animation = 'sunny_hap
     );
   }
   return (
-    <div className="animate-float">
-      <Sprout stage={stage} />
-    </div>
+    <WithWeather animation={animation}>
+      <div className="animate-float">{stage === 'FRUIT' ? <FruitPlant size={170} /> : <Sprout stage={stage} />}</div>
+    </WithWeather>
   );
 }
 
