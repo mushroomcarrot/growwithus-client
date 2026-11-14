@@ -16,6 +16,12 @@ export function StreakXp({ streak, xp }) {
   );
 }
 
+// 수확일 계산 전(null)이면 계산 중으로 표시
+export function harvestLabel(dDay) {
+  if (dDay == null) return '수확일 계산 중';
+  return dDay > 0 ? `수확까지 D-${dDay}` : '수확할 수 있어요';
+}
+
 export function StageProgress({ stage, dDay }) {
   const index = STAGES.indexOf(stage);
   return (
@@ -24,7 +30,7 @@ export function StageProgress({ stage, dDay }) {
         <span>
           {STAGE_LABEL[stage]} 단계 · {index + 1}/4
         </span>
-        <span className="text-[#B53A2E]">{dDay > 0 ? `수확까지 D-${dDay}` : '수확할 수 있어요'}</span>
+        <span className="text-[#B53A2E]">{harvestLabel(dDay)}</span>
       </div>
       <div className="grid grid-cols-4 gap-1.5" aria-hidden="true">
         {STAGES.map((s, i) => (

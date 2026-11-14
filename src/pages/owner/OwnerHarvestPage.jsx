@@ -9,6 +9,7 @@ import { FruitPlant } from '../../components/common/Characters';
 import { ErrorBox, FieldError, LoadingSpinner } from '../../components/common/Feedback';
 import { IconFork, IconSprout } from '../../components/common/Icons';
 import CropCharacter from '../../components/owner/CropCharacter';
+import { harvestLabel } from '../../components/owner/OwnerParts';
 
 export default function OwnerHarvestPage() {
   const { gardenId } = useMe();
@@ -37,8 +38,9 @@ export default function OwnerHarvestPage() {
   const available = slots.filter((s) => s.available);
   const selectedId = slotId ?? available[0]?.slotId ?? null;
   const selected = slots.find((s) => s.slotId === selectedId);
-  const ready = harvest.harvestable || harvest.dDay <= 7;
-  const expectedDay = weekdayName(harvest.expectedDate);
+  const hasDate = Boolean(harvest.expectedDate);
+  const ready = harvest.harvestable || (harvest.dDay != null && harvest.dDay <= 7);
+  const expectedDay = hasDate ? weekdayName(harvest.expectedDate) : '주말';
 
   const reserve = async () => {
     if (!selected) return;
@@ -62,10 +64,14 @@ export default function OwnerHarvestPage() {
       <section className="flex flex-col items-center gap-1.5 bg-sun px-5 pt-12 pb-5">
         <span className="text-xs font-bold text-[#6B4A07]">
           {STAGE_LABEL[harvest.stage] ? `${STAGE_LABEL[harvest.stage]} 단계 · ` : ''}
-          {harvest.dDay > 0 ? `수확까지 D-${harvest.dDay}` : '수확할 수 있어요'}
+          {harvestLabel(harvest.dDay)}
         </span>
         <h1 className="text-center text-[26px] font-extrabold">
-          {ready ? `이번 ${expectedDay}, 수확해요!` : `${formatMonthDay(harvest.expectedDate)}쯤 수확해요`}
+          {ready
+            ? `이번 ${expectedDay}, 수확해요!`
+            : hasDate
+              ? `${formatMonthDay(harvest.expectedDate)}쯤 수확해요`
+              : '수확일을 계산하고 있어요'}
         </h1>
         {harvest.stage === 'FRUIT' || ready ? <FruitPlant size={160} /> : <CropCharacter stage={harvest.stage ?? 'FLOWER'} animation="sunny_happy" />}
         <p className="text-center text-xs leading-normal text-[#5E5233]">

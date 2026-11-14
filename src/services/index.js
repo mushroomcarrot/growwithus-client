@@ -17,6 +17,9 @@ import { blobToDataUrl } from '../utils/image';
 
 const pick = (mock, real) => (USE_MOCK ? mock : real);
 
+// 서버(Jackson)가 dDay를 dday로 내려줘서 화면에서 쓰는 dDay로 맞춤. 수확일 계산 전이면 null.
+const withDDay = (o) => (o ? { ...o, dDay: o.dDay ?? o.dday ?? null } : o);
+
 export const authService = pick(mockAuth, {
   signup: (body) => apiClient.post('/auth/signup', body),
   checkUsername: (username) => apiClient.get('/auth/username-check', { params: { username } }),
@@ -43,7 +46,8 @@ export const profileService = pick(mockProfile, {
 });
 
 export const homeService = pick(mockHome, {
-  getHome: (gardenId) => apiClient.get(`/gardens/${gardenId}/home`),
+  getHome: (gardenId) =>
+    apiClient.get(`/gardens/${gardenId}/home`).then((h) => (h ? { ...h, harvest: withDDay(h.harvest) ?? {} } : h)),
   cheer: (gardenId) => apiClient.post(`/gardens/${gardenId}/cheers`),
   sendHeart: (careLogId) => apiClient.post(`/care-logs/${careLogId}/hearts`),
   getEvents: (gardenId) => apiClient.get(`/gardens/${gardenId}/events`),
@@ -61,7 +65,7 @@ export const questService = pick(mockQuest, {
 });
 
 export const harvestService = pick(mockHarvest, {
-  getHarvest: (gardenId) => apiClient.get(`/gardens/${gardenId}/harvest`),
+  getHarvest: (gardenId) => apiClient.get(`/gardens/${gardenId}/harvest`).then(withDDay),
   getVisitSlots: (gardenId) => apiClient.get(`/gardens/${gardenId}/visit-slots`),
   // headcount는 선택값이라 보내지 않음
   reserveVisit: ({ gardenId, slotId }) => apiClient.post('/visits', { gardenId, slotId }),
