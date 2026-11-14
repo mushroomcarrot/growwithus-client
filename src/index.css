@@ -25,7 +25,7 @@
   --color-orange: #A2480F;
   --color-orange-light: #FDEBDC;
   --color-sun: #FFF4CF;
-  --font-sans: "Noto Sans KR", system-ui, -apple-system, sans-serif;
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
 }
 
 html,
@@ -39,6 +39,7 @@ body {
   background: #EFEAE0;
   color: var(--color-ink);
   font-family: var(--font-sans);
+  letter-spacing: -0.02em;
   -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
 }
@@ -46,6 +47,7 @@ body {
 button {
   cursor: pointer;
   font-family: inherit;
+  letter-spacing: inherit;
 }
 
 button:disabled {
@@ -56,6 +58,7 @@ input,
 select,
 textarea {
   font-family: inherit;
+  letter-spacing: inherit;
 }
 
 input::placeholder,

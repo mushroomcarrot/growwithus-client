@@ -31,7 +31,8 @@ export default defineConfig({
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // 폰트 조각(woff2)은 미리 다 받지 않고 쓸 때 받음 (Pretendard 조각 파일이 많음)
+        globPatterns: ['**/*.{js,css,html,svg,png}'],
         navigateFallback: '/index.html',
       },
       devOptions: { enabled: false },
