@@ -8,6 +8,7 @@ import {
   mockFarm,
   mockHarvest,
   mockHome,
+  mockNotification,
   mockProfile,
   mockQuest,
   mockTask,
@@ -41,17 +42,31 @@ export const farmService = pick(mockFarm, {
 export const profileService = pick(mockProfile, {
   createOwnerProfile: (body) => apiClient.post('/owners/me/profile', body),
   updateOwnerProfile: (body) => apiClient.patch('/owners/me/profile', body),
-  // characterId는 백엔드 필드 확정 전이라 서버가 무시해도 동작함
-  createCaretakerProfile: (body) => apiClient.post('/caretakers/me/profile', body),
+  createCaretakerProfile: ({ name, farmId }) => apiClient.post('/caretakers/me/profile', { name, farmId }),
+  // 사진으로 AI 얼굴 그림 만들기. 초상권 동의가 있어야 하고 사진 원본은 서버에 남지 않음
+  requestAvatar: (photo) => {
+    const form = new FormData();
+    form.append('photo', photo, photo.name ?? 'photo.jpg');
+    form.append('portraitConsent', 'true');
+    return apiClient.post('/caretakers/me/avatar', form, { timeout: 30000 });
+  },
+  getAvatar: () => apiClient.get('/caretakers/me/avatar'),
 });
 
 export const homeService = pick(mockHome, {
   getHome: (gardenId) =>
     apiClient.get(`/gardens/${gardenId}/home`).then((h) => (h ? { ...h, harvest: withDDay(h.harvest) ?? {} } : h)),
+  // AI 성장 시뮬레이션의 설명 문장
+  getGrowth: (gardenId) => apiClient.get(`/gardens/${gardenId}/growth`),
   cheer: (gardenId) => apiClient.post(`/gardens/${gardenId}/cheers`),
   sendHeart: (careLogId) => apiClient.post(`/care-logs/${careLogId}/hearts`),
   getEvents: (gardenId) => apiClient.get(`/gardens/${gardenId}/events`),
   ackEvent: (eventId) => apiClient.post(`/events/${eventId}/ack`),
+});
+
+export const notificationService = pick(mockNotification, {
+  getList: (cursor) => apiClient.get('/notifications', { params: { cursor, limit: 20 } }),
+  readAll: () => apiClient.patch('/notifications/all/read'),
 });
 
 export const diaryService = pick(mockDiary, {
@@ -69,6 +84,7 @@ export const harvestService = pick(mockHarvest, {
   getVisitSlots: (gardenId) => apiClient.get(`/gardens/${gardenId}/visit-slots`),
   // headcount는 선택값이라 보내지 않음
   reserveVisit: ({ gardenId, slotId }) => apiClient.post('/visits', { gardenId, slotId }),
+  cancelVisit: (visitId) => apiClient.delete(`/visits/${visitId}`),
   getOutings: (gardenId) => apiClient.get(`/gardens/${gardenId}/outings`),
 });
 

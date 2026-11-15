@@ -18,6 +18,7 @@ import OwnerHomePage from './pages/owner/OwnerHomePage';
 import OwnerDiaryPage from './pages/owner/OwnerDiaryPage';
 import OwnerHarvestPage from './pages/owner/OwnerHarvestPage';
 import OwnerMyPage from './pages/owner/OwnerMyPage';
+import OwnerNotificationsPage from './pages/owner/OwnerNotificationsPage';
 import CaretakerTodayPage from './pages/caretaker/CaretakerTodayPage';
 import TaskPhotoPage from './pages/caretaker/TaskPhotoPage';
 import TaskVoicePage from './pages/caretaker/TaskVoicePage';
@@ -89,6 +90,7 @@ export default function App() {
                 <Route path="/owner/diary" element={<OwnerDiaryPage />} />
                 <Route path="/owner/harvest" element={<OwnerHarvestPage />} />
                 <Route path="/owner/my" element={<OwnerMyPage />} />
+                <Route path="/owner/notifications" element={<OwnerNotificationsPage />} />
               </Route>
             </Route>
 

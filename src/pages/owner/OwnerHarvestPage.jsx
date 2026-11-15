@@ -15,8 +15,8 @@ export default function OwnerHarvestPage() {
   const { gardenId } = useMe();
   const showToast = useUiStore((s) => s.showToast);
   const [slotId, setSlotId] = useState(null);
-  const [reserved, setReserved] = useState(null);
   const [reserving, setReserving] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
@@ -36,10 +36,17 @@ export default function OwnerHarvestPage() {
 
   const { harvest, slots, outings } = data;
   const available = slots.filter((s) => s.available);
-  const selectedId = slotId ?? available[0]?.slotId ?? null;
+  // 서버가 내려준 기존 예약. 다시 들어와도 그대로 보임
+  const reserved = harvest.visit?.status === 'RESERVED' ? harvest.visit : null;
+  const reservedSlotId = reserved
+    ? slots.find((s) => s.date === reserved.date && s.startTime === reserved.startTime)?.slotId
+    : null;
+  const selectedId = reservedSlotId ?? slotId ?? available[0]?.slotId ?? null;
   const selected = slots.find((s) => s.slotId === selectedId);
   const hasDate = Boolean(harvest.expectedDate);
-  const ready = harvest.harvestable || (harvest.dDay != null && harvest.dDay <= 7);
+  // 수확 가능 여부는 서버 기준만 따름 (관리사가 열매를 확인해야 true)
+  const ready = Boolean(harvest.harvestable);
+  const soon = !ready && harvest.dDay != null && harvest.dDay <= 7;
   const expectedDay = hasDate ? weekdayName(harvest.expectedDate) : '주말';
 
   const reserve = async () => {
@@ -49,13 +56,28 @@ export default function OwnerHarvestPage() {
     try {
       const res = await harvestService.reserveVisit({ gardenId, slotId: selected.slotId });
       setSlotId(selected.slotId);
-      setReserved(res);
       showToast(`${weekdayName(res.date)} ${formatHourLabel(res.startTime)}로 예약됐어요`);
-      reload({ silent: true });
+      await reload({ silent: true });
     } catch (e) {
       setError(e.message);
     } finally {
       setReserving(false);
+    }
+  };
+
+  const cancel = async () => {
+    if (!reserved) return;
+    setCanceling(true);
+    setError('');
+    try {
+      await harvestService.cancelVisit(reserved.visitId);
+      setSlotId(null);
+      showToast('방문 예약을 취소했어요');
+      await reload({ silent: true });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setCanceling(false);
     }
   };
 
@@ -73,6 +95,7 @@ export default function OwnerHarvestPage() {
               ? `${formatMonthDay(harvest.expectedDate)}쯤 수확해요`
               : '수확일을 계산하고 있어요'}
         </h1>
+        {soon && <p className="text-center text-xs font-bold text-[#6B4A07]">관리사님이 열매를 확인하면 바로 알려드릴게요</p>}
         {harvest.stage === 'FRUIT' || ready ? <FruitPlant size={160} /> : <CropCharacter stage={harvest.stage ?? 'FLOWER'} animation="sunny_happy" />}
         <p className="text-center text-xs leading-normal text-[#5E5233]">
           AI 예측 수확일까지 {givenName(harvest.caretakerName)} 님이
@@ -133,8 +156,19 @@ export default function OwnerHarvestPage() {
         <FieldError>{error}</FieldError>
         <div className="flex-1" />
         {reserved ? (
-          <div className="rounded-2xl bg-leaf-soft px-4 py-3.5 text-center text-[15px] font-bold text-leaf-dark" role="status">
-            {formatMonthDay(reserved.date)} {weekdayName(reserved.date)} {formatHourLabel(reserved.startTime)} 방문 예약 완료
+          <div className="flex flex-col gap-2">
+            <div className="rounded-2xl bg-leaf-soft px-4 py-3.5 text-center text-[15px] font-bold text-leaf-dark" role="status">
+              {formatMonthDay(reserved.date)} {weekdayName(reserved.date)} {formatHourLabel(reserved.startTime)} 방문 예약 완료
+            </div>
+            <button
+              type="button"
+              onClick={cancel}
+              disabled={canceling}
+              className="h-11 rounded-2xl border-[1.5px] border-[#DDD6C6] bg-white text-sm font-bold text-sub disabled:opacity-50"
+            >
+              {canceling ? '취소하고 있어요' : '예약 취소하기'}
+            </button>
+            <p className="text-center text-[11px] text-muted">방문 하루 전까지 취소할 수 있어요</p>
           </div>
         ) : (
           <button

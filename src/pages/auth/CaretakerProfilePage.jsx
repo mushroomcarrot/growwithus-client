@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAsync } from '../../hooks/useAsync';
 import { farmService, profileService } from '../../services';
@@ -9,7 +9,8 @@ import { BackButton } from '../../components/common/Layout';
 import { FieldError } from '../../components/common/Feedback';
 import { PrimaryButton, TextField } from '../../components/common/Form';
 import ReadAloudButton from '../../components/common/ReadAloudButton';
-import { CARETAKER_CHARACTERS, CaretakerFace } from '../../components/common/Characters';
+import { CaretakerFace } from '../../components/common/Characters';
+import { useUiStore } from '../../store/uiStore';
 
 const AREA = {
   farm_theme: '처인구 원삼면',
@@ -28,7 +29,11 @@ export default function CaretakerProfilePage() {
   const { data: farms } = useAsync(() => farmService.getFarms(), []);
   const [name, setName] = useState('');
   const [farmId, setFarmId] = useState(null);
-  const [characterId, setCharacterId] = useState(CARETAKER_CHARACTERS[0].id);
+  const showToast = useUiStore((s) => s.showToast);
+  const [photo, setPhoto] = useState(null);
+  const [consent, setConsent] = useState(false);
+  const preview = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
+  useEffect(() => () => preview && URL.revokeObjectURL(preview), [preview]);
   const [errors, setErrors] = useState({});
   const [submitError, setSubmitError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,12 +46,22 @@ export default function CaretakerProfilePage() {
     const found = {};
     if (!name.trim()) found.name = '성함을 적어 주세요.';
     if (!selectedFarm) found.farm = '일하실 농장을 골라 주세요.';
+    if (photo && !consent) found.consent = '사진을 쓰려면 아래 동의에 표시해 주세요.';
     setErrors(found);
     if (Object.keys(found).length) return;
     setLoading(true);
     setSubmitError('');
     try {
-      const res = await profileService.createCaretakerProfile({ name: name.trim(), farmId: selectedFarm, characterId });
+      const res = await profileService.createCaretakerProfile({ name: name.trim(), farmId: selectedFarm });
+      // 얼굴 그림은 서버가 뒤에서 만듦. 실패해도 가입은 끝내고 기본 그림을 씀
+      if (photo && consent) {
+        try {
+          await profileService.requestAvatar(photo);
+          showToast('얼굴 그림을 만들고 있어요. 조금 뒤 가족 화면에 나와요');
+        } catch {
+          showToast('얼굴 그림은 나중에 다시 만들 수 있어요');
+        }
+      }
       setNextStep(res.nextStep);
       clearMe();
       navigate(pathForNextStep(res.nextStep, 'CARETAKER'), { replace: true });
@@ -61,7 +76,7 @@ export default function CaretakerProfilePage() {
     <main className="flex flex-1 flex-col px-5 pt-11 pb-safe">
       <div className="flex items-center justify-between">
         <BackButton to="/role" label="역할 선택으로 돌아가기" large />
-        <ReadAloudButton text="반가워요. 성함을 적고, 일하실 농장과 얼굴 그림을 골라 주세요." />
+        <ReadAloudButton text="반가워요. 성함을 적고, 일하실 농장을 골라 주세요. 사진을 올리면 얼굴 그림도 만들어 드려요." />
       </div>
       <h1 className="mt-4 text-[28px] leading-snug font-extrabold">
         반가워요!
@@ -117,27 +132,50 @@ export default function CaretakerProfilePage() {
         </fieldset>
 
         <fieldset className="flex flex-col gap-2.5">
-          <legend className="mb-2 text-[19px] font-extrabold">3. 내 얼굴 그림</legend>
-          <div className="grid grid-cols-4 gap-2">
-            {CARETAKER_CHARACTERS.map((c) => {
-              const selected = characterId === c.id;
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  aria-pressed={selected}
-                  aria-label={c.label}
-                  onClick={() => setCharacterId(c.id)}
-                  className={`flex aspect-square items-center justify-center rounded-2xl ${
-                    selected ? 'border-[3px] border-leaf bg-leaf-soft' : 'border-2 border-[#DDD6C6] bg-white'
-                  }`}
-                >
-                  <CaretakerFace characterId={c.id} size={56} />
-                </button>
-              );
-            })}
+          <legend className="mb-2 text-[19px] font-extrabold">3. 내 얼굴 그림 (안 하셔도 돼요)</legend>
+          <div className="flex items-center gap-3">
+            {photo ? (
+              <img
+                src={preview}
+                alt="고른 사진"
+                className="h-[72px] w-[72px] shrink-0 rounded-2xl object-cover"
+              />
+            ) : (
+              <span className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-2xl border-2 border-[#DDD6C6] bg-white">
+                <CaretakerFace size={56} />
+              </span>
+            )}
+            <label className="flex min-h-14 flex-1 cursor-pointer items-center justify-center rounded-[18px] border-2 border-[#DDD6C6] bg-white px-4 text-center text-[17px] font-extrabold">
+              {photo ? '다른 사진 고르기' : '사진 찍거나 고르기'}
+              <input
+                type="file"
+                accept="image/jpeg,image/png"
+                className="sr-only"
+                onChange={(e) => {
+                  setPhoto(e.target.files?.[0] ?? null);
+                  setErrors({ ...errors, consent: undefined });
+                }}
+              />
+            </label>
           </div>
-          <p className="text-[15px] text-[#4A5145]">가족 화면에 이 그림이 나와요</p>
+          <p className="text-[15px] text-[#4A5145]">
+            사진으로 AI가 얼굴 그림을 그려서 가족 화면에 보여 줘요. 사진은 그림을 만든 뒤 남기지 않아요.
+          </p>
+          {photo && (
+            <label className="flex min-h-14 items-center gap-3 rounded-[18px] border-2 border-[#DDD6C6] bg-white px-4 py-3 text-[17px] font-bold">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => {
+                  setConsent(e.target.checked);
+                  setErrors({ ...errors, consent: undefined });
+                }}
+                className="h-6 w-6 shrink-0 accent-[#4C8C3F]"
+              />
+              내 사진으로 얼굴 그림을 만드는 데 동의해요
+            </label>
+          )}
+          <FieldError>{errors.consent}</FieldError>
         </fieldset>
 
         <FieldError>{submitError}</FieldError>

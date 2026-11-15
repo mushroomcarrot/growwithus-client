@@ -94,16 +94,17 @@ VITE_POLLING_INTERVAL=4000
 | /signup | SignupPage | DT_SIGNUP | 이름·아이디·비밀번호, 아이디 중복 확인 | POST /auth/signup, GET /auth/username-check |
 | /role | RoleSelectPage | DT_ROLE | 텃밭 주인 / 텃밭 관리사 선택 | PUT /users/me/role |
 | /profile/owner | OwnerProfilePage | DT_PROFILE_OWNER | 가족 이름, 사는 곳, 농장 + 칸 번호, 담당 관리사 미리보기 | GET /farms, GET /farms/{farmId}/plots/{plotCode}, POST /owners/me/profile |
-| /profile/caretaker | CaretakerProfilePage | DT_PROFILE_CARE | 성함, 일할 농장, 기본 캐릭터 고르기 | GET /farms, POST /caretakers/me/profile, POST /tts |
+| /profile/caretaker | CaretakerProfilePage | DT_PROFILE_CARE | 성함, 일할 농장, 사진과 초상권 동의로 AI 얼굴 그림 만들기(선택) | GET /farms, POST /caretakers/me/profile, POST /caretakers/me/avatar, POST /tts |
 
 ### 4.2 텃밭 주인
 
 | 경로 | 컴포넌트 | 화면 코드 | 기능 | 사용 API |
 |------|----------|-----------|------|----------|
-| /owner | OwnerHomePage | DT_HOME | 캐릭터(날씨·단계·기분), 날씨, 스트릭·XP, D-day, 최근 돌봄 + 하트, 오늘의 응원. 미확인 이벤트가 있으면 EvolveOverlay | GET /gardens/{gardenId}/home, POST .../cheers, POST /care-logs/{id}/hearts, GET .../events |
+| /owner | OwnerHomePage | DT_HOME | 캐릭터(날씨·단계·기분), 날씨, 스트릭·XP, D-day, 최근 돌봄 + 하트, 오늘의 응원, AI 성장 설명, 알림 종(안 읽은 수). 미확인 이벤트가 있으면 EvolveOverlay | GET /gardens/{gardenId}/home, GET .../growth, GET /notifications, POST .../cheers, POST /care-logs/{id}/hearts, GET .../events |
 | (오버레이) | EvolveOverlay | DT_EVOLVE | 단계 변화 축하, 보상 | POST /events/{eventId}/ack |
 | /owner/diary | OwnerDiaryPage | DT_DIARY | 성장 일기 타임라인, 필터(ALL/PHOTO/STAGE), 무한 스크롤 | GET /gardens/{gardenId}/diary |
-| /owner/harvest | OwnerHarvestPage | DT_HARVEST | 수확 예정일, 방문 시간 선택·예약, 나들이 추천 | GET .../harvest, GET .../visit-slots, POST /visits, GET .../outings |
+| /owner/harvest | OwnerHarvestPage | DT_HARVEST | 수확 예정일, 방문 시간 선택·예약, 기존 예약 표시와 취소, 나들이 추천. "수확해요" 문구는 서버의 `harvestable`이 true일 때만 | GET .../harvest, GET .../visit-slots, POST /visits, DELETE /visits/{visitId}, GET .../outings |
+| /owner/notifications | OwnerNotificationsPage | DT_HOME | 알림 목록, 들어오면 모두 읽음 처리, 누르면 대상 화면으로 이동 | GET /notifications, PATCH /notifications/all/read |
 | /owner/my | OwnerMyPage | DT_MY | 프로필, 스트릭·XP, 내 텃밭·담당 관리사, 주간 퀘스트 | GET /users/me, GET .../home, GET /quests/weekly, POST /quests/{id}/claim |
 
 ### 4.3 텃밭 관리사
@@ -160,7 +161,7 @@ VITE_POLLING_INTERVAL=4000
 - **LoadingSpinner**, **ErrorMessage**, **EmptyState**
 - **ProtectedRoute**: 로그인·역할 확인 후 이동
 - **ReadAloudButton**: `/tts` 음성 재생, 실패 시 브라우저 `speechSynthesis`로 대체
-- **CaretakerAvatar**: 관리사 기본 캐릭터 이미지 (avatarUrl이 없으면 기본 이미지)
+- **CaretakerAvatar**: 관리사 얼굴 그림. 서버가 만든 AI 아바타(`avatarUrl`)를 쓰고, 없으면 기본 그림
 
 ### 5.2 텃밭 주인 컴포넌트
 - **CropCharacter**: props `stage`(SEED/SPROUT/FLOWER/FRUIT), `animation`(sunny_happy/rain_umbrella/hot_sweat/sad_droop), `message`
@@ -370,6 +371,10 @@ apiClient.interceptors.response.use(
 | profileService | createOwnerProfile | POST /owners/me/profile |
 | | updateOwnerProfile | PATCH /owners/me/profile |
 | | createCaretakerProfile | POST /caretakers/me/profile |
+| | requestAvatar | POST /caretakers/me/avatar (multipart `photo`, `portraitConsent`) |
+| | getAvatar | GET /caretakers/me/avatar |
+| notificationService | getList | GET /notifications?cursor=&limit= |
+| | readAll | PATCH /notifications/all/read |
 | ttsService | speak | POST /tts (`responseType: 'blob'`) |
 | homeService | getHome | GET /gardens/{gardenId}/home |
 | | getGrowth | GET /gardens/{gardenId}/growth |
@@ -383,6 +388,7 @@ apiClient.interceptors.response.use(
 | harvestService | getHarvest | GET /gardens/{gardenId}/harvest |
 | | getVisitSlots | GET /gardens/{gardenId}/visit-slots?from=&to= |
 | | reserveVisit | POST /visits |
+| | cancelVisit | DELETE /visits/{visitId} |
 | | getOutings | GET /gardens/{gardenId}/outings |
 | taskService | getToday | GET /caretaker/tasks/today |
 | | uploadPhoto | POST /caretaker/tasks/{taskId}/photos (multipart `photo`) |
@@ -515,6 +521,7 @@ export const taskService = {
 ### 8.9 방문 예약
 - 슬롯 선택 → `POST /visits` → 성공 시 Toast "토요일 오전 10시로 예약됐어요"
 - `headcount`는 선택값이라 화면에서 입력받지 않고 보내지 않음
+- 기존 예약은 `GET .../harvest`의 `visit`으로 받아 다시 들어와도 보여 줌. 예약 취소는 `DELETE /visits/{visitId}` (방문 하루 전까지)
 
 ### 8.10 데모 페이지
 - /demo에서 주인·관리사 iframe + DemoPanel

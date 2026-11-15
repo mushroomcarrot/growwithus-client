@@ -190,6 +190,9 @@ export const mockProfile = {
         return { nickname: user.owner.nickname, district: user.owner.district, gardenId: user.owner.gardenId };
       })
     ),
+  // 목업은 그림을 만들지 않고 기본 얼굴을 그대로 씀
+  requestAvatar: () => respond(() => ({ avatarJobId: 'avj_mock', status: 'PENDING' })),
+  getAvatar: () => respond(() => ({ avatarJobId: 'avj_mock', status: 'FAILED', avatarUrl: null })),
   createCaretakerProfile: ({ name, farmId, characterId }) =>
     respond(() =>
       updateDb((db) => {
@@ -249,7 +252,50 @@ function homeOf(db, garden) {
   };
 }
 
+const GROWTH_TEXT = {
+  SEED: '씨앗이 흙 속에서 싹 틔울 준비를 하고 있어요.',
+  SPROUT: '새싹이 햇볕을 받으며 잘 자라고 있어요.',
+  FLOWER: '요즘 따뜻해서 꽃이 잘 피고 있어요. 이대로면 곧 열매가 맺혀요.',
+  FRUIT: '열매가 빨갛게 익었어요. 수확하러 오세요.',
+};
+
+export const mockNotification = {
+  getList: () =>
+    respond(() => {
+      const db = readDb();
+      const user = db.users[currentUsername()];
+      const gardenId = user?.owner?.gardenId;
+      const readAt = db.notificationsReadAt ?? '';
+      const items = db.careLogs
+        .filter((c) => gardenId && c.gardenId === gardenId)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, 20)
+        .map((c) => ({
+          notificationId: `ntf_${c.careLogId}`,
+          type: 'CARE_DONE',
+          title: '텃밭 돌봄을 마쳤어요',
+          body: c.summary,
+          target: { screen: 'DT_DIARY', id: c.careLogId },
+          read: c.createdAt <= readAt,
+          createdAt: c.createdAt,
+        }));
+      return { items, unreadCount: items.filter((n) => !n.read).length, nextCursor: null };
+    }, 150),
+  readAll: () =>
+    respond(() =>
+      updateDb((db) => {
+        db.notificationsReadAt = nowIso();
+        return { readCount: 0, unreadCount: 0 };
+      })
+    ),
+};
+
 export const mockHome = {
+  getGrowth: (gardenId) =>
+    respond(() => {
+      const garden = findGarden(readDb(), gardenId);
+      return { stage: garden.stage, explanation: GROWTH_TEXT[garden.stage] ?? '' };
+    }, 150),
   getHome: (gardenId) => respond(() => homeOf(readDb(), findGarden(readDb(), gardenId)), 200),
   cheer: (gardenId) =>
     respond(() =>
@@ -370,6 +416,10 @@ export const mockHarvest = {
         careLogCount: garden.careLogCount,
         caretakerName: farmCaretaker(garden.farmId)?.name ?? '',
         message: `${expected.getMonth() + 1}월 ${expected.getDate()}일쯤 ${garden.crop.characterName}를 만나러 오세요`,
+        visit: (() => {
+          const v = db.visits.find((x) => x.gardenId === gardenId);
+          return v ? { visitId: v.visitId, date: v.date, startTime: v.startTime, status: v.status } : null;
+        })(),
       };
     }),
   getVisitSlots: (gardenId) =>
@@ -398,6 +448,14 @@ export const mockHarvest = {
         const visit = { visitId: `vst_${slotId}`, gardenId, slotId, date, startTime, status: 'RESERVED' };
         db.visits.push(visit);
         return { visitId: visit.visitId, date, startTime, status: 'RESERVED' };
+      })
+    ),
+  cancelVisit: (visitId) =>
+    respond(() =>
+      updateDb((db) => {
+        if (!db.visits.some((v) => v.visitId === visitId)) throw toError('C404');
+        db.visits = db.visits.filter((v) => v.visitId !== visitId);
+        return null;
       })
     ),
   getOutings: () =>

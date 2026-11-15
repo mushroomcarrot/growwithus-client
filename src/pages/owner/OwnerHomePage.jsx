@@ -1,8 +1,9 @@
 import { useCallback, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAsync } from '../../hooks/useAsync';
 import { givenName, useMe } from '../../hooks/useMe';
 import { usePolling } from '../../hooks/usePolling';
-import { homeService } from '../../services';
+import { homeService, notificationService } from '../../services';
 import { useUiStore } from '../../store/uiStore';
 import { WEATHER_LABEL } from '../../utils/labels';
 import { formatTime } from '../../utils/format';
@@ -12,7 +13,12 @@ import EvolveOverlay from '../../components/owner/EvolveOverlay';
 import { AiLine, StageProgress, StreakXp } from '../../components/owner/OwnerParts';
 import CaretakerAvatar from '../../components/common/CaretakerAvatar';
 import { ErrorBox, LoadingSpinner } from '../../components/common/Feedback';
-import { Heart } from '../../components/common/Icons';
+import { Heart, IconBell } from '../../components/common/Icons';
+
+const WEATHER_MESSAGE = {
+  rain_umbrella: '비가 와서 우산을 썼어요',
+  hot_sweat: '날이 더워서 땀이 나요',
+};
 
 export default function OwnerHomePage() {
   const { me, gardenId, error: meError, reload: reloadMe } = useMe();
@@ -22,7 +28,14 @@ export default function OwnerHomePage() {
 
   const loadHome = useCallback(async () => {
     if (!gardenId) return null;
-    const home = await homeService.getHome(gardenId);
+    // 성장 설명과 안 읽은 알림 수는 실패해도 홈은 그대로 보여 줌
+    const [home, growth, notifications] = await Promise.all([
+      homeService.getHome(gardenId),
+      homeService.getGrowth(gardenId).catch(() => null),
+      notificationService.getList().catch(() => null),
+    ]);
+    home.growthExplanation = growth?.explanation ?? null;
+    home.unreadCount = notifications?.unreadCount ?? 0;
     if (home.hasUnreadEvent) {
       const events = await homeService.getEvents(gardenId);
       if (events.length) setEvent((prev) => prev ?? events[0]);
@@ -37,8 +50,16 @@ export default function OwnerHomePage() {
   if (error && !home) return <ErrorBox message={error.message} onRetry={reload} />;
   if (!gardenId || !home) return <LoadingSpinner />;
 
-  const { character, weather, streak, xp, harvest, caretaker, recentCareLog } = home;
-  const card = WEATHER_CARD[character.animation] ?? WEATHER_CARD.sunny_happy;
+  const { character, weather, caretaker, recentCareLog } = home;
+  const streak = home.streak ?? { days: 0, cheeredToday: false };
+  const xp = home.xp ?? { total: 0, today: 0 };
+  const harvest = home.harvest ?? {};
+  // 비·더위는 기분(시무룩)과 상관없이 실제 날씨대로 바로 보여 줌 (서버는 시무룩을 날씨보다 우선함)
+  const weatherAnimation = { RAIN: 'rain_umbrella', HOT: 'hot_sweat' }[weather?.condition];
+  const animation = weatherAnimation ?? character.animation;
+  const message =
+    weatherAnimation && weatherAnimation !== character.animation ? WEATHER_MESSAGE[weatherAnimation] : character.message;
+  const card = WEATHER_CARD[animation] ?? WEATHER_CARD.sunny_happy;
   const caretakerName = givenName(caretaker?.name);
 
   const cheer = async () => {
@@ -83,18 +104,33 @@ export default function OwnerHomePage() {
             {home.nickname ?? me?.owner?.nickname ?? ''} {character.cropName ?? character.name}
           </h1>
         </div>
-        <StreakXp streak={streak.days} xp={xp.total} />
+        <div className="flex items-center gap-1.5">
+          <StreakXp streak={streak.days} xp={xp.total} />
+          <Link
+            to="/owner/notifications"
+            aria-label={home.unreadCount ? `알림, 안 읽은 알림 ${home.unreadCount}개` : '알림'}
+            className="relative flex h-[30px] w-[30px] items-center justify-center rounded-full bg-white text-ink shadow-sm"
+          >
+            <IconBell size={18} />
+            {home.unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-heart px-1 text-[10px] font-extrabold text-white">
+                {home.unreadCount > 9 ? '9+' : home.unreadCount}
+              </span>
+            )}
+          </Link>
+        </div>
       </header>
 
       <section className={`flex flex-col items-center gap-2 rounded-3xl p-4 ${card.bg}`}>
         <div className={`flex justify-between self-stretch text-[13px] font-bold ${card.text}`}>
+          {/* 서버에 수집된 날씨가 없으면 weather가 null로 옴 */}
           <span>
-            {weather.area ?? '처인구'} · {WEATHER_LABEL[weather.condition] ?? weather.condition}
+            {weather?.area ?? '처인구'} · {weather ? (WEATHER_LABEL[weather.condition] ?? weather.condition) : '날씨 준비 중'}
           </span>
-          <span>{Math.round(weather.temperature)}°C</span>
+          {weather?.temperature != null && <span>{Math.round(weather.temperature)}°C</span>}
         </div>
-        <CropCharacter stage={character.stage} animation={character.animation} />
-        <span className="rounded-2xl bg-white px-4 py-2 text-[13px] font-medium">{character.message}</span>
+        <CropCharacter stage={character.stage} animation={animation} />
+        <span className="rounded-2xl bg-white px-4 py-2 text-[13px] font-medium">{message}</span>
         <button
           type="button"
           onClick={cheer}
@@ -106,6 +142,7 @@ export default function OwnerHomePage() {
       </section>
 
       <StageProgress stage={character.stage} dDay={harvest.dDay} />
+      {home.growthExplanation && <AiLine>{home.growthExplanation}</AiLine>}
 
       {recentCareLog ? (
         <section className="flex flex-col gap-3 rounded-[20px] bg-white p-4 shadow-[0_2px_10px_rgba(60,50,30,0.08)]">
@@ -122,7 +159,7 @@ export default function OwnerHomePage() {
           {recentCareLog.photoUrl && (
             <img src={recentCareLog.photoUrl} alt="관리사가 찍은 작업 사진" className="h-40 w-full rounded-[14px] object-cover" />
           )}
-          <AiLine tone={character.animation === 'rain_umbrella' ? 'blue' : 'green'}>{recentCareLog.summary}</AiLine>
+          <AiLine tone={animation === 'rain_umbrella' ? 'blue' : 'green'}>{recentCareLog.summary}</AiLine>
           <button
             type="button"
             onClick={sendHeart}
