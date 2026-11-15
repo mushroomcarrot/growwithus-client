@@ -15,22 +15,36 @@ const WEATHERS = [
   { value: 'HOT', icon: <IconThermo size={24} />, color: 'text-[#C2453A]' },
 ];
 
-function usePhoneScale() {
-  const calc = () => Math.min(1, (window.innerHeight - 96) / PHONE_H);
-  const [scale, setScale] = useState(calc);
+const FRAME_W = PHONE_W + 12; // 테두리 포함
+const FRAME_H = PHONE_H + 12;
+const CAPTION_H = 28; // 휴대폰 위 제목 줄
+const PHONE_GAP = 24; // 두 휴대폰 사이 간격
+
+// 휴대폰 두 대가 들어갈 영역 크기를 재서, 그 안을 꽉 채우는 배율을 구함 (작으면 줄이고 크면 키움)
+function usePhoneScale(areaRef) {
+  const [scale, setScale] = useState(0.8);
   useEffect(() => {
-    const onResize = () => setScale(calc());
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
+    const el = areaRef.current;
+    if (!el) return undefined;
+    const update = () => {
+      const { clientWidth: w, clientHeight: h } = el;
+      const byHeight = (h - CAPTION_H) / FRAME_H;
+      const byWidth = (w - PHONE_GAP) / 2 / FRAME_W;
+      setScale(Math.max(0.3, Math.min(byHeight, byWidth)));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [areaRef]);
   return scale;
 }
 
 function PhoneFrame({ title, src, frameRef, scale }) {
   return (
-    <figure className="flex flex-col items-center gap-2">
-      <figcaption className="text-sm font-bold text-[#4A5145]">{title}</figcaption>
-      <div style={{ width: PHONE_W * scale, height: PHONE_H * scale }}>
+    <figure className="m-0 flex flex-col items-center">
+      <figcaption className="flex h-7 items-center text-sm font-bold text-[#4A5145]">{title}</figcaption>
+      <div style={{ width: FRAME_W * scale, height: FRAME_H * scale }}>
         <div
           className="overflow-hidden rounded-[36px] border-[6px] border-[#1F2A1F] bg-cream shadow-xl"
           style={{ width: PHONE_W + 12, height: PHONE_H + 12, transform: `scale(${scale})`, transformOrigin: 'top left' }}
@@ -91,7 +105,9 @@ function AdminLogin() {
 }
 
 export default function DemoPage() {
-  const scale = usePhoneScale();
+  const areaRef = useRef(null);
+  const scale = usePhoneScale(areaRef);
+  const [panelOpen, setPanelOpen] = useState(true);
   const ownerRef = useRef(null);
   const careRef = useRef(null);
   const { accessToken, role, login, logout } = useAuthStore();
@@ -152,17 +168,42 @@ export default function DemoPage() {
   };
 
   return (
-    <div className="flex min-h-full items-start justify-center gap-6 bg-[#EFEAE0] p-6">
-      <PhoneFrame title="텃밭 주인 (수지 · 민지네)" src="/owner?demo=owner" frameRef={ownerRef} scale={scale} />
-      <PhoneFrame title="텃밭 관리사 (처인 · 순자 님)" src="/caretaker?demo=caretaker" frameRef={careRef} scale={scale} />
+    // 화면 전체에 고정해서 스크롤이 생기지 않게 함
+    <div className="fixed inset-0 flex gap-4 overflow-hidden bg-[#EFEAE0] p-4">
+      <div ref={areaRef} className="flex min-w-0 flex-1 items-center justify-center" style={{ gap: PHONE_GAP }}>
+        <PhoneFrame title="텃밭 주인 (수지 · 민지네)" src="/owner?demo=owner" frameRef={ownerRef} scale={scale} />
+        <PhoneFrame title="텃밭 관리사 (처인 · 순자 님)" src="/caretaker?demo=caretaker" frameRef={careRef} scale={scale} />
+      </div>
 
-      <aside className="flex w-[340px] shrink-0 flex-col gap-6 self-stretch rounded-[20px] border border-line bg-white p-6">
+      {!panelOpen && (
+        <button
+          type="button"
+          onClick={() => setPanelOpen(true)}
+          className="absolute top-4 right-4 rounded-full bg-ink px-4 py-2 text-[13px] font-bold text-white opacity-70 shadow-lg hover:opacity-100"
+        >
+          데모 컨트롤 열기
+        </button>
+      )}
+
+      {/* 숨겨도 상태가 유지되도록 화면에서만 감춤 */}
+      <aside
+        className={`${panelOpen ? 'flex' : 'hidden'} w-[340px] shrink-0 flex-col gap-6 overflow-y-auto rounded-[20px] border border-line bg-white p-6`}
+      >
         <div className="flex flex-col gap-1">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="rounded-md bg-ink px-2 py-0.5 text-[11px] font-extrabold tracking-wide text-white">DEMO</span>
-            <button type="button" onClick={exitDemo} className="text-[13px] font-bold text-sub underline">
-              로그인 화면으로
-            </button>
+            <span className="flex items-center gap-3">
+              <button type="button" onClick={exitDemo} className="text-[13px] font-bold text-sub underline">
+                로그인 화면으로
+              </button>
+              <button
+                type="button"
+                onClick={() => setPanelOpen(false)}
+                className="rounded-lg border border-line px-2.5 py-1 text-[13px] font-bold"
+              >
+                숨기기
+              </button>
+            </span>
           </div>
           <h1 className="mt-1 text-[22px] font-extrabold">데모 컨트롤</h1>
           <p className="text-[13px] text-sub">누르면 주인·관리사 화면에 바로 반영돼요</p>
