@@ -7,6 +7,7 @@ import { authService } from './services';
 import { USE_MOCK } from './services/mock';
 import { demoAs, useAuthStore } from './store/authStore';
 import { useCaretakerStore } from './store/caretakerStore';
+import { useMeStore } from './store/ownerStore';
 import { pathForNextStep } from './utils/nextStep';
 
 import LoginPage from './pages/auth/LoginPage';
@@ -26,6 +27,7 @@ import TaskDonePage from './pages/caretaker/TaskDonePage';
 import DemoPage from './pages/demo/DemoPage';
 
 const DEMO_ACCOUNTS = { owner: 'minji', caretaker: 'soonja' };
+const DEMO_ROLE = { owner: 'OWNER', caretaker: 'CARETAKER' };
 
 function RootRedirect() {
   const { accessToken, nextStep, role } = useAuthStore();
@@ -39,6 +41,7 @@ function DemoBridge({ children }) {
   const login = useAuthStore((s) => s.login);
   const accessToken = useAuthStore((s) => s.accessToken);
   const resetTask = useCaretakerStore((s) => s.resetTask);
+  const clearMe = useMeStore((s) => s.clearMe);
   const needsAutoLogin = Boolean(demoAs && USE_MOCK && !accessToken && DEMO_ACCOUNTS[demoAs]);
   const [ready, setReady] = useState(!needsAutoLogin);
 
@@ -61,6 +64,38 @@ function DemoBridge({ children }) {
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [navigate, resetTask]);
+
+  // 시연 화면(부모)이 보낸 계정으로 로그인 (비밀번호는 코드에 두지 않고 시연 화면에서 받음)
+  useEffect(() => {
+    if (!demoAs) return undefined;
+    const onMessage = async (e) => {
+      if (e.origin !== window.location.origin || e.source !== window.parent || e.data?.type !== 'demo-login') return;
+      const reply = (ok, message = '') =>
+        window.parent.postMessage({ type: 'demo-login-result', as: demoAs, ok, message }, window.location.origin);
+      const { accessToken: token, role } = useAuthStore.getState();
+      if (token && role === DEMO_ROLE[demoAs]) {
+        reply(true);
+        return;
+      }
+      try {
+        const res = await authService.login({ username: e.data.username, password: e.data.password });
+        if (res.role !== DEMO_ROLE[demoAs]) {
+          reply(false, '역할이 맞지 않는 계정이에요');
+          return;
+        }
+        clearMe();
+        login(res);
+        navigate(pathForNextStep(res.nextStep, res.role), { replace: true });
+        reply(true);
+      } catch (err) {
+        reply(false, err.message);
+      }
+    };
+    window.addEventListener('message', onMessage);
+    // 준비됐다고 알려서, 시연 화면이 비밀번호를 갖고 있으면 바로 로그인 요청을 보내게 함
+    if (window.parent !== window) window.parent.postMessage({ type: 'demo-ready', as: demoAs }, window.location.origin);
+    return () => window.removeEventListener('message', onMessage);
+  }, [navigate, login, clearMe]);
 
   if (!ready) return <LoadingSpinner label="시연 계정으로 접속하고 있어요" />;
   return children;

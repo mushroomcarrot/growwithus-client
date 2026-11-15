@@ -40,65 +40,74 @@ function usePhoneScale(areaRef) {
   return scale;
 }
 
-function PhoneFrame({ title, src, frameRef, scale }) {
+function PhoneFrame({ title, src, frameRef, scale, onLoad }) {
   return (
     <figure className="m-0 flex flex-col items-center">
-      <figcaption className="flex h-7 items-center text-sm font-bold text-[#4A5145]">{title}</figcaption>
+      <figcaption className="flex h-7 items-center text-sm font-bold text-white/80">{title}</figcaption>
       <div style={{ width: FRAME_W * scale, height: FRAME_H * scale }}>
         <div
-          className="overflow-hidden rounded-[36px] border-[6px] border-[#1F2A1F] bg-cream shadow-xl"
+          className="overflow-hidden rounded-[36px] border-[6px] border-[#3A3F3A] bg-cream shadow-xl"
           style={{ width: PHONE_W + 12, height: PHONE_H + 12, transform: `scale(${scale})`, transformOrigin: 'top left' }}
         >
-          <iframe ref={frameRef} title={title} src={src} width={PHONE_W} height={PHONE_H} className="block border-0" allow="camera; microphone" />
+          <iframe
+            ref={frameRef}
+            title={title}
+            src={src}
+            width={PHONE_W}
+            height={PHONE_H}
+            onLoad={onLoad}
+            className="block border-0"
+            allow="camera; microphone"
+          />
         </div>
       </div>
     </figure>
   );
 }
 
-function AdminLogin() {
-  const login = useAuthStore((s) => s.login);
-  const [form, setForm] = useState({ username: '', password: '' });
-  const [error, setError] = useState('');
+// 시연 계정 아이디 (비밀번호는 코드에 두지 않음: 공개 저장소·배포 파일에 그대로 드러나기 때문)
+const DEMO_USERS = { admin: 'growadmin', owner: 'minji', caretaker: 'soonja' };
+const PASS_KEY = 'daesin-demo-pass';
 
-  const submit = async (e) => {
+const readSavedPass = () => {
+  try {
+    return localStorage.getItem(PASS_KEY) ?? '';
+  } catch {
+    return '';
+  }
+};
+
+function DemoLogin({ onSubmit, busy, error }) {
+  const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
+
+  const submit = (e) => {
     e.preventDefault();
-    setError('');
-    try {
-      const res = await authService.login(form);
-      if (res.role !== 'ADMIN') {
-        setError('시연용 ADMIN 계정으로 로그인해 주세요.');
-        return;
-      }
-      login(res);
-    } catch (err) {
-      setError(err.message);
-    }
+    if (password) onSubmit(password, remember);
   };
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-3" noValidate>
-      <p className="text-sm text-sub">데모 패널은 시연용 ADMIN 계정으로만 동작해요.</p>
+      <p className="text-sm leading-relaxed text-sub">
+        시연 비밀번호를 한 번 입력하면 관리자({DEMO_USERS.admin}), 주인({DEMO_USERS.owner}), 관리사({DEMO_USERS.caretaker})로
+        한꺼번에 로그인해요.
+      </p>
       <input
-        aria-label="아이디"
-        placeholder="ADMIN 아이디"
-        autoComplete="username"
-        value={form.username}
-        onChange={(e) => setForm({ ...form, username: e.target.value })}
-        className="h-12 rounded-xl border-[1.5px] border-[#D9D3C4] px-3"
-      />
-      <input
-        aria-label="비밀번호"
+        aria-label="시연 비밀번호"
         type="password"
-        placeholder="비밀번호"
+        placeholder="시연 비밀번호"
         autoComplete="current-password"
-        value={form.password}
-        onChange={(e) => setForm({ ...form, password: e.target.value })}
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
         className="h-12 rounded-xl border-[1.5px] border-[#D9D3C4] px-3"
       />
+      <label className="flex items-center gap-2 text-sm text-sub">
+        <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+        이 컴퓨터에 기억하기 (다음부터 자동 로그인)
+      </label>
       <FieldError>{error}</FieldError>
-      <button type="submit" className="h-12 rounded-xl bg-ink font-bold text-white">
-        로그인
+      <button type="submit" disabled={busy || !password} className="h-12 rounded-xl bg-ink font-bold text-white disabled:opacity-50">
+        {busy ? '로그인하고 있어요' : '세 계정 한꺼번에 로그인'}
       </button>
     </form>
   );
@@ -114,7 +123,65 @@ export default function DemoPage() {
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginError, setLoginError] = useState('');
+  const [frameLogin, setFrameLogin] = useState({ owner: '', caretaker: '' });
+  const passRef = useRef('');
   const isAdmin = Boolean(accessToken) && role === 'ADMIN';
+
+  // 폰 화면(iframe)에 시연 계정 로그인 요청
+  const sendFrameLogin = (as) => {
+    const ref = as === 'owner' ? ownerRef : careRef;
+    if (!passRef.current) return;
+    ref.current?.contentWindow?.postMessage(
+      { type: 'demo-login', username: DEMO_USERS[as], password: passRef.current },
+      window.location.origin
+    );
+  };
+
+  const loginAll = async (password, remember) => {
+    setLoginBusy(true);
+    setLoginError('');
+    try {
+      const res = await authService.login({ username: DEMO_USERS.admin, password });
+      if (res.role !== 'ADMIN') throw new Error('관리자 계정이 아니에요.');
+      passRef.current = password;
+      try {
+        if (remember) localStorage.setItem(PASS_KEY, password);
+        else localStorage.removeItem(PASS_KEY);
+      } catch {
+        // 저장소를 못 쓰는 환경
+      }
+      login(res);
+      sendFrameLogin('owner');
+      sendFrameLogin('caretaker');
+    } catch (e) {
+      setLoginError(e.message);
+    } finally {
+      setLoginBusy(false);
+    }
+  };
+
+  // 폰 화면의 로그인 결과 받기
+  useEffect(() => {
+    const onMessage = (e) => {
+      if (e.origin !== window.location.origin) return;
+      if (e.data?.type === 'demo-ready' && ['owner', 'caretaker'].includes(e.data.as)) sendFrameLogin(e.data.as);
+      if (e.data?.type === 'demo-login-result') {
+        setFrameLogin((prev) => ({ ...prev, [e.data.as]: e.data.ok ? 'ok' : e.data.message || '실패' }));
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
+
+  // 이 컴퓨터에 기억해 둔 비밀번호가 있으면 자동으로 로그인
+  useEffect(() => {
+    if (USE_MOCK) return;
+    const saved = readSavedPass();
+    if (saved) loginAll(saved, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 목업 모드에서는 ADMIN으로 자동 로그인
   useEffect(() => {
@@ -131,6 +198,7 @@ export default function DemoPage() {
     logout();
     try {
       localStorage.removeItem('daesin-auth');
+      localStorage.removeItem(PASS_KEY);
     } catch {
       // 저장소를 못 쓰는 환경
     }
@@ -169,17 +237,29 @@ export default function DemoPage() {
 
   return (
     // 화면 전체에 고정해서 스크롤이 생기지 않게 함
-    <div className="fixed inset-0 flex gap-4 overflow-hidden bg-[#EFEAE0] p-4">
+    <div className="fixed inset-0 flex gap-4 overflow-hidden bg-black p-4">
       <div ref={areaRef} className="flex min-w-0 flex-1 items-center justify-center" style={{ gap: PHONE_GAP }}>
-        <PhoneFrame title="텃밭 주인 (수지 · 민지네)" src="/owner?demo=owner" frameRef={ownerRef} scale={scale} />
-        <PhoneFrame title="텃밭 관리사 (처인 · 순자 님)" src="/caretaker?demo=caretaker" frameRef={careRef} scale={scale} />
+        <PhoneFrame
+          title="텃밭 주인 (수지 · 민지네)"
+          src="/owner?demo=owner"
+          frameRef={ownerRef}
+          scale={scale}
+          onLoad={() => sendFrameLogin('owner')}
+        />
+        <PhoneFrame
+          title="텃밭 관리사 (처인 · 순자 님)"
+          src="/caretaker?demo=caretaker"
+          frameRef={careRef}
+          scale={scale}
+          onLoad={() => sendFrameLogin('caretaker')}
+        />
       </div>
 
       {!panelOpen && (
         <button
           type="button"
           onClick={() => setPanelOpen(true)}
-          className="absolute top-4 right-4 rounded-full bg-ink px-4 py-2 text-[13px] font-bold text-white opacity-70 shadow-lg hover:opacity-100"
+          className="absolute top-4 right-4 rounded-full bg-white/15 px-4 py-2 text-[13px] font-bold text-white opacity-70 hover:opacity-100"
         >
           데모 컨트롤 열기
         </button>
@@ -210,7 +290,11 @@ export default function DemoPage() {
         </div>
 
         {!isAdmin ? (
-          USE_MOCK ? <p className="text-sm text-sub">시연 계정으로 접속하고 있어요…</p> : <AdminLogin />
+          USE_MOCK ? (
+            <p className="text-sm text-sub">시연 계정으로 접속하고 있어요…</p>
+          ) : (
+            <DemoLogin onSubmit={loginAll} busy={loginBusy} error={loginError} />
+          )
         ) : (
           <>
             <section className="flex flex-col gap-2.5">
@@ -289,6 +373,14 @@ export default function DemoPage() {
               <p className="text-xs text-sub">누르면 주인 화면에 열매 진화 연출이 떠요</p>
             </section>
 
+            {[
+              ['owner', '주인 화면'],
+              ['caretaker', '관리사 화면'],
+            ].map(([as, label]) =>
+              frameLogin[as] && frameLogin[as] !== 'ok' ? (
+                <FieldError key={as}>{`${label} 로그인 실패: ${frameLogin[as]}`}</FieldError>
+              ) : null
+            )}
             <FieldError>{error}</FieldError>
             <div className="flex-1" />
 
